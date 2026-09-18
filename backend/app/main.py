@@ -1,6 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
+from app.db.base import engine, Base
+
+# Import all models so SQLAlchemy knows about them
+from app.models import User, Song, Session, Transition  # noqa: F401
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -16,6 +20,26 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+async def startup():
+    """Create database tables on startup and ensure default user exists"""
+    Base.metadata.create_all(bind=engine)
+
+    # Auto-create default user so the app works out of the box
+    from app.db.base import SessionLocal
+    from app.models.user import User
+    db = SessionLocal()
+    try:
+        default_user = db.query(User).filter(User.email == "local@auralflow.local").first()
+        if not default_user:
+            db.add(User(email="local@auralflow.local", display_name="Local Audiophile"))
+            db.commit()
+    except Exception:
+        db.rollback()
+    finally:
+        db.close()
 
 
 @app.get("/")

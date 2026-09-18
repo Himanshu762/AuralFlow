@@ -1,6 +1,6 @@
 # 🎧 AuralFlow: AI-Powered Smart Music Player
 
-> An intelligent music layer built on top of Spotify that automatically curates and transitions songs in real time based on your mood, listening behavior, and emotional flow.
+> An intelligent music player that automatically curates and transitions songs in real time based on your mood, listening behavior, and emotional flow. Streams high-quality FLAC audio for free via **[Monochrome](https://github.com/monochrome-music/monochrome)**.
 
 ## 🌟 What Makes AuralFlow Special
 
@@ -19,32 +19,23 @@ AuralFlow sees this as a **coherent emotional arc**, not random genre-hopping.
 
 ```
 ┌─────────────────────────────────────────────┐
-│  Frontend (Next.js + React)                 │
-│  - Music player UI                          │
-│  - Mood visualization                       │
-│  - Spotify Web Playback SDK                 │
+│  Desktop App (Tauri ~20MB RAM)              │
+│  Native macOS/Windows/Linux window          │
+│  Uses system WebKit (no Chromium)           │
+├─────────────────────────────────────────────┤
+│  Web App (Next.js on :3000)                 │  ← same code
+│  Search via Monochrome (browser, :5173)     │
+│  HTML5 <audio> FLAC playback                │
+│  Mood visualization + AI DJ controls        │
 └──────────────┬──────────────────────────────┘
-               │
+               │ HTTP (JSON)
                ▼
 ┌─────────────────────────────────────────────┐
-│  Backend (FastAPI)                          │
-│  - REST API                                 │
-│  - Spotify OAuth & API integration          │
-│  - Session & user management                │
-└──────────────┬──────────────────────────────┘
-               │
-               ▼
-┌─────────────────────────────────────────────┐
-│  ML Engine (PyTorch)                        │
-│  - Mood vector computation                  │
-│  - Reinforcement learning agent             │
-│  - Smart recommendation ranking             │
-└──────────────┬──────────────────────────────┘
-               │
-               ▼
-┌─────────────────────────────────────────────┐
-│  Database (PostgreSQL)                      │
-│  - Users, sessions, songs, transitions      │
+│  Backend (FastAPI on :8000)                 │
+│  RL Agent scoring & training                │
+│  Mood mapping (genre → 5D vector)           │
+│  Session tracking                           │
+│  Supabase (PostgreSQL)                      │
 └─────────────────────────────────────────────┘
 ```
 
@@ -54,10 +45,10 @@ AuralFlow sees this as a **coherent emotional arc**, not random genre-hopping.
 
 ### Prerequisites
 
-- **Python 3.13+**
+- **Python 3.11+**
 - **Node.js 18+**
-- **PostgreSQL 14+**
-- **Spotify Developer Account** (you mentioned you have credentials)
+- **Supabase account** (free tier works — [supabase.com](https://supabase.com))
+- **Rust** (only for the desktop app — optional)
 
 ---
 
@@ -73,38 +64,20 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 # Install dependencies
 pip install -r requirements.txt
 
-# Set up environment variables
+# Configure your Supabase connection
+# Edit .env and set DATABASE_URL to your Supabase connection string
+# (Dashboard → Settings → Database → Connection string → URI)
 cp .env.example .env
-# Edit .env with your Spotify credentials and database URL
-```
+# Then edit .env with your Supabase credentials
 
-**Configure `.env`:**
-```env
-SPOTIFY_CLIENT_ID=your_spotify_client_id
-SPOTIFY_CLIENT_SECRET=your_spotify_client_secret
-SPOTIFY_REDIRECT_URI=http://localhost:3000/api/auth/callback
-DATABASE_URL=postgresql://auralflow:password@localhost:5432/auralflow_db
-SECRET_KEY=generate_a_random_secret_key
-```
-
-**Set up PostgreSQL:**
-```bash
-# Create database
-createdb auralflow_db
-
-# Run migrations (once we set up Alembic)
-alembic upgrade head
-```
-
-**Run the backend:**
-```bash
-cd backend
-source venv/bin/activate
+# Start the backend (tables are auto-created on first startup)
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 Backend will be available at: `http://localhost:8000`
 API docs (Swagger): `http://localhost:8000/docs`
+
+> **Note:** Get your Supabase connection string from: Dashboard → Settings → Database → Connection string (URI). Tables are auto-created on first startup.
 
 ---
 
@@ -124,13 +97,29 @@ Frontend will be available at: `http://localhost:3000`
 
 ---
 
-### 3️⃣ Spotify App Setup
+### 3️⃣ Monochrome Setup
 
-1. Go to [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
-2. Create a new app
-3. Add redirect URI: `http://localhost:3000/api/auth/callback`
-4. Note your **Client ID** and **Client Secret**
-5. Add them to `backend/.env`
+AuralFlow uses [Monochrome](https://github.com/monochrome-music/monochrome) as its music discovery and FLAC streaming engine.
+
+```bash
+cd monochrome_app
+npm install
+npm run dev
+```
+
+Monochrome will run on `http://localhost:5173`.
+
+---
+
+### 4️⃣ Desktop App (Optional)
+
+The desktop app wraps the web UI in a native window using [Tauri](https://tauri.app/) — only ~20MB RAM vs Electron's 300MB.
+
+```bash
+# Requires Rust: https://rustup.rs
+cd desktop/src-tauri
+cargo tauri dev
+```
 
 ---
 
@@ -146,24 +135,31 @@ AuralFlow/
 │   │   │       ├── sessions.py
 │   │   │       └── recommendations.py
 │   │   ├── core/             # Config & security
-│   │   ├── db/               # Database setup
+│   │   ├── db/               # Database setup (SQLite)
 │   │   ├── models/           # SQLAlchemy models
-│   │   ├── schemas/          # Pydantic schemas
 │   │   └── services/         # Business logic
-│   │       ├── spotify_service.py
+│   │       ├── track_service.py
 │   │       ├── mood_service.py
+│   │       ├── mood_mapper.py
 │   │       └── recommendation_service.py
 │   ├── requirements.txt
 │   └── .env
 ├── ml/                   # Machine learning
 │   ├── agents/
 │   │   └── music_rl_agent.py
-│   ├── models/
-│   └── utils/
+│   └── models/
 ├── frontend/             # Next.js frontend
 │   ├── app/
-│   ├── components/
+│   │   ├── layout.tsx
+│   │   ├── page.tsx          # Main music player UI
+│   │   └── globals.css
 │   └── public/
+├── desktop/              # Tauri desktop app
+│   └── src-tauri/
+│       ├── Cargo.toml
+│       ├── tauri.conf.json
+│       └── src/main.rs
+├── monochrome_app/       # Self-hosted Monochrome instance
 └── docs/                 # Documentation
 ```
 
@@ -172,13 +168,13 @@ AuralFlow/
 ## 🧠 How It Works
 
 ### 1. Mood Vector Computation
-Every song is represented as a **5D mood vector**:
+Every song is represented as a **5D mood vector** derived from its genre metadata:
 ```python
 [energy, valence, danceability, acousticness, instrumentalness]
 ```
 
 Example:
-- `Avicii - Wake Me Up`: `[0.8, 0.7, 0.6, 0.3, 0.1]` → "Energetic & Uplifting"
+- `EDM / Dance`: `[0.9, 0.7, 0.9, 0.1, 0.1]` → "Energetic & Uplifting"
 - `Lo-fi chill`: `[0.2, 0.6, 0.4, 0.8, 0.7]` → "Calm & Peaceful"
 
 ### 2. Mood Flow Tracking
@@ -197,26 +193,18 @@ The RL agent learns from your behavior:
 
 **Policy:** The neural network learns to predict which songs you'll enjoy based on your current mood state.
 
-### 4. Smart Queueing
-For each recommendation request:
-1. **Predict** where your mood is heading
-2. **Fetch** candidates from Spotify with matching features
-3. **Rank** them using the trained RL policy
-4. **Queue** the top pick automatically
-
 ---
 
 ## 🔌 API Endpoints
 
 ### Authentication
-- `GET /api/v1/auth/login` - Initiate Spotify OAuth
-- `GET /api/v1/auth/callback` - OAuth callback
+- `GET /api/v1/auth/login` - Local auto-login
 - `GET /api/v1/auth/me` - Get current user
 
 ### Recommendations
-- `POST /api/v1/recommendations/next` - Get next song recommendations
+- `POST /api/v1/recommendations/score` - Score and rank candidate tracks
 - `POST /api/v1/recommendations/feedback` - Submit listening feedback
-- `GET /api/v1/recommendations/audio-features/{track_id}` - Get track features
+- `POST /api/v1/recommendations/mood` - Compute mood vector for a track
 
 ### Sessions
 - `POST /api/v1/sessions/start` - Start listening session
@@ -226,97 +214,32 @@ For each recommendation request:
 
 ---
 
-## 🗄️ Database Schema
-
-### Users
-- `spotify_id`, `email`, `display_name`
-- `mood_bias`, `avg_skip_rate`, `avg_session_length`
-- `access_token`, `refresh_token`
-
-### Songs
-- `spotify_id`, `name`, `artist`, `album`
-- Audio features: `energy`, `valence`, `danceability`, etc.
-- `mood_vector` (computed)
-
-### Sessions
-- `user_id`, `started_at`, `ended_at`
-- `mood_start`, `mood_end`, `mood_trajectory`
-- `total_songs_played`, `total_songs_skipped`
-
-### Transitions
-- `from_song_id`, `to_song_id`
-- `was_played_fully`, `was_skipped`, `was_liked`
-- `reward` (for RL training)
-
----
-
 ## 🎯 Roadmap
 
-### Phase 1: Core MVP (Current)
-- ✅ Backend API setup
-- ✅ Spotify integration
-- ✅ Mood analysis engine
+### Phase 1: Core MVP ✅
+- ✅ Backend API with SQLite
+- ✅ Monochrome integration (FLAC streaming)
+- ✅ Mood analysis engine (genre → 5D vector)
 - ✅ RL agent implementation
-- ⏳ PostgreSQL database setup
-- ⏳ Frontend player UI
-- ⏳ Mood visualization
+- ✅ Frontend player UI
+- ✅ Mood visualization
+- ✅ Tauri desktop app
 
 ### Phase 2: Enhancement
-- [ ] User authentication with JWT
-- [ ] Session persistence
-- [ ] Historical mood analytics
+- [ ] Historical mood analytics dashboard
 - [ ] Playlist generation from mood arcs
-- [ ] Social features (share mood flows)
+- [ ] Offline mode with cached tracks
+- [ ] System tray controls (desktop)
 
 ### Phase 3: Mobile & Expansion
 - [ ] Flutter mobile app (iOS + Android)
-- [ ] Apple Music integration (optional)
-- [ ] Offline mode
-- [ ] Desktop app (Electron/Tauri)
+- [ ] Multi-user support
 
 ---
 
-## 🛠️ Development
+## 🙏 Acknowledgements
 
-### Run Backend Tests
-```bash
-cd backend
-pytest
-```
-
-### Run Frontend Dev Mode
-```bash
-cd frontend
-npm run dev
-```
-
-### Train RL Model
-The model trains automatically as users interact, but you can:
-```python
-from ml.agents.music_rl_agent import rl_agent
-
-# Save trained model
-rl_agent.save_model('models/auralflow_v1.pt')
-
-# Load pre-trained model
-rl_agent.load_model('models/auralflow_v1.pt')
-```
-
----
-
-## 🤝 Contributing
-
-This is your personal project, but if you want to collaborate later:
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
-
----
-
-## 📝 License
-
-[Choose your license - MIT, Apache 2.0, etc.]
+**[Monochrome](https://github.com/monochrome-music/monochrome)**: AuralFlow uses the incredible Monochrome open-source music player as our underlying FLAC audio engine and music discovery source. Huge thanks to the Monochrome team for making high-quality, privacy-respecting audio accessible!
 
 ---
 

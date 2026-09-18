@@ -54,7 +54,7 @@ class MusicRLAgent:
 
     def __init__(
         self,
-        state_dim: int = 10,
+        state_dim: int = 17,  # 12 state dims + 5 song mood dims
         learning_rate: float = 0.001,
         gamma: float = 0.95,  # Discount factor
         epsilon: float = 0.3,  # Exploration rate

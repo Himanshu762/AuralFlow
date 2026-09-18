@@ -1,0 +1,93 @@
+# ========================================
+# AuralFlow — Root .gitignore
+# ========================================
+
+# ---------- OS ----------
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~
+
+# ---------- IDEs ----------
+.idea/
+.vscode/
+*.code-workspace
+.claude/
+
+# ---------- Python (backend) ----------
+backend/venv/
+backend/__pycache__/
+backend/**/__pycache__/
+backend/**/*.pyc
+backend/**/*.pyo
+*.pyc
+*.pyo
+__pycache__/
+*.egg-info/
+dist/
+build/
+
+# ---------- Backend data ----------
+backend/auralflow.db
+backend/*.db
+*.db
+
+# ---------- Environment / Secrets ----------
+.env
+.env.local
+.env.*.local
+backend/.env
+frontend/.env.local
+*.env.example
+
+# ---------- Node / Frontend ----------
+node_modules/
+frontend/.next/
+frontend/out/
+frontend/.vercel
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# ---------- Monochrome ----------
+monochrome_app/node_modules/
+monochrome_app/dist/
+monochrome_app/dev-dist/
+monochrome_app/.vite/
+monochrome_app/.tmp/
+monochrome_app/.storage/
+monochrome_app/auth_storage/
+monochrome_app/www/
+monochrome_app/bin/
+monochrome_app/.vitest-attachments/
+monochrome_app/**/__screenshots__/
+
+# ---------- Tauri / Rust ----------
+desktop/src-tauri/target/
+desktop/src-tauri/icons/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# ---------- ML / Model artifacts ----------
+ml/models/*.pt
+ml/models/*.pth
+ml/models/*.ckpt
+ml/models/*.bin
+*.pt
+*.pth
+*.ckpt
+
+# ---------- Logs ----------
+*.log
+logs/
+
+# ---------- Misc ----------
+.tmp/
+*.local
+coverage/
+.nyc_output/

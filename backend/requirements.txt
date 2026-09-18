@@ -4,20 +4,17 @@ uvicorn[standard]==0.32.1
 python-multipart==0.0.18
 python-dotenv==1.0.1
 
-# Database
+# Database (Supabase PostgreSQL)
 psycopg2-binary==2.9.10
 sqlalchemy==2.0.36
 alembic==1.14.0
 
-# Spotify Integration
-spotipy==2.24.0
+# HTTP Client
 requests==2.32.3
 
 # Machine Learning & Data Science
 torch==2.9.0
 numpy==2.2.0
-pandas==2.2.3
-scikit-learn==1.6.0
 
 # Authentication
 pyjwt==2.10.1

@@ -1,134 +1,102 @@
 """
 Recommendation Service
 
-Orchestrates the mood analysis, RL agent, and Spotify API
-to generate intelligent song recommendations
+Orchestrates the mood analysis and RL agent to rank candidate tracks.
+The frontend sends candidate tracks (from Monochrome search results),
+and this service scores and ranks them using the RL agent.
 """
 
+import os
 import sys
-sys.path.append('/Users/anonymouse/AuralFlow/ml')
+
+# Add project root to path so ml package can be imported
+_project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
 
 from typing import List, Dict, Optional
-from app.services.spotify_service import spotify_service
+from app.services.track_service import track_service
 from app.services.mood_service import mood_service
 from ml.agents.music_rl_agent import rl_agent
-import spotipy
 import numpy as np
+import torch
 
 
 class RecommendationService:
     """
     Core recommendation engine that combines:
-    1. Spotify recommendations
-    2. Mood-based filtering
-    3. RL-based ranking
+    1. Mood-based filtering (via heuristic mapper)
+    2. RL-based ranking
     """
 
-    def get_next_songs(
+    def score_candidates(
         self,
-        spotify_client: spotipy.Spotify,
+        candidates: List[Dict],
         current_mood: List[float],
-        recent_songs: List[Dict],
         recent_moods: List[List[float]],
         time_of_day: str = "afternoon",
         device_type: str = "web",
-        num_recommendations: int = 10
+        num_recommendations: int = 10,
     ) -> List[Dict]:
         """
-        Get the next recommended songs based on mood flow
+        Score and rank candidate tracks sent by the frontend.
 
         Args:
-            spotify_client: Authenticated Spotify client
-            current_mood: Current mood vector [energy, valence, ...]
-            recent_songs: List of recently played songs with Spotify IDs
+            candidates: List of track dicts with at minimum {id, title, artist, genre}
+            current_mood: Current mood vector [energy, valence, danceability, acousticness, instrumentalness]
             recent_moods: List of recent mood vectors
             time_of_day: morning, afternoon, evening, night
             device_type: web, mobile, desktop
-            num_recommendations: Number of songs to return
+            num_recommendations: Number of results to return
 
         Returns:
-            List of recommended songs with metadata and confidence scores
+            Ranked list of tracks with confidence scores and mood data
         """
+        if not candidates:
+            return []
 
         # Step 1: Predict next mood direction
         predicted_mood = mood_service.predict_next_mood(
             recent_moods + [current_mood],
-            transition_weight=0.3
+            transition_weight=0.3,
         )
 
-        # Step 2: Get Spotify recommendations based on predicted mood
-        seed_tracks = [song['spotify_id'] for song in recent_songs[-3:]] if recent_songs else None
+        # Step 2: Compute mood vectors for all candidates
+        enriched = track_service.compute_batch_moods(candidates)
 
-        candidates = spotify_service.get_recommendations(
-            spotify_client=spotify_client,
-            seed_tracks=seed_tracks,
-            target_energy=predicted_mood[0],
-            target_valence=predicted_mood[1],
-            target_danceability=predicted_mood[2],
-            limit=50  # Get more candidates for RL to rank
-        )
-
-        if not candidates:
-            return []
-
-        # Step 3: Get audio features and compute mood vectors for candidates
-        candidate_songs_with_moods = []
-        for song in candidates:
-            audio_features = spotify_service.get_audio_features(
-                spotify_client,
-                song['id']
-            )
-
-            if audio_features:
-                mood_vector = mood_service.compute_mood_vector(audio_features)
-                mood_label = mood_service.get_mood_label(mood_vector)
-
-                candidate_songs_with_moods.append({
-                    'spotify_id': song['id'],
-                    'name': song['name'],
-                    'artist': song['artist'],
-                    'uri': song['uri'],
-                    'mood_vector': mood_vector,
-                    'mood_label': mood_label,
-                    'audio_features': audio_features
-                })
-
-        if not candidate_songs_with_moods:
-            return []
-
-        # Step 4: Use RL agent to rank candidates
+        # Step 3: Encode the current state for the RL agent
         state = rl_agent.encode_state(
             current_mood=current_mood,
             recent_moods=recent_moods,
             time_of_day=time_of_day,
-            device_type=device_type
+            device_type=device_type,
         )
 
-        # Score each candidate using the RL policy
+        # Step 4: Score each candidate using the RL policy
         scored_songs = []
-        for song in candidate_songs_with_moods:
-            # Get Q-value from RL agent
-            song_mood = song['mood_vector']
+        for song in enriched:
+            song_mood = song["mood_vector"]
             combined = np.concatenate([state, song_mood])
 
-            import torch
             with torch.no_grad():
                 combined_tensor = torch.FloatTensor(combined)
                 q_value = rl_agent.policy_net(combined_tensor).item()
 
-            scored_songs.append({
-                **song,
-                'confidence': q_value,
-                'mood_distance': mood_service.compute_mood_distance(
-                    current_mood,
-                    song['mood_vector']
-                )
-            })
+            scored_songs.append(
+                {
+                    **song,
+                    "confidence": round(q_value, 4),
+                    "mood_distance": round(
+                        mood_service.compute_mood_distance(current_mood, song["mood_vector"]),
+                        4,
+                    ),
+                    "predicted_mood": predicted_mood,
+                }
+            )
 
         # Sort by confidence (Q-value) descending
-        scored_songs.sort(key=lambda x: x['confidence'], reverse=True)
+        scored_songs.sort(key=lambda x: x["confidence"], reverse=True)
 
-        # Return top N
         return scored_songs[:num_recommendations]
 
     def record_feedback(
@@ -136,10 +104,10 @@ class RecommendationService:
         state: Dict,
         selected_song: Dict,
         feedback: Dict,
-        next_state: Optional[Dict] = None
-    ):
+        next_state: Optional[Dict] = None,
+    ) -> Dict:
         """
-        Record user feedback and train the RL agent
+        Record user feedback and train the RL agent.
 
         Args:
             state: Previous state (mood, context)
@@ -147,34 +115,33 @@ class RecommendationService:
             feedback: User feedback (played_fully, skipped, liked, etc.)
             next_state: New state after the song
         """
-
         # Encode state
         current_state_vec = rl_agent.encode_state(
-            current_mood=state['current_mood'],
-            recent_moods=state.get('recent_moods', []),
-            time_of_day=state.get('time_of_day', 'afternoon'),
-            device_type=state.get('device_type', 'web')
+            current_mood=state["current_mood"],
+            recent_moods=state.get("recent_moods", []),
+            time_of_day=state.get("time_of_day", "afternoon"),
+            device_type=state.get("device_type", "web"),
         )
 
         # Song action
-        action_mood = selected_song['mood_vector']
+        action_mood = selected_song["mood_vector"]
 
         # Compute reward
         reward = rl_agent.compute_reward(
-            was_played_fully=feedback.get('was_played_fully', False),
-            was_skipped=feedback.get('was_skipped', False),
-            was_liked=feedback.get('was_liked', False),
-            was_replayed=feedback.get('was_replayed', False),
-            play_duration_ratio=feedback.get('play_duration_ratio', 0.0)
+            was_played_fully=feedback.get("was_played_fully", False),
+            was_skipped=feedback.get("was_skipped", False),
+            was_liked=feedback.get("was_liked", False),
+            was_replayed=feedback.get("was_replayed", False),
+            play_duration_ratio=feedback.get("play_duration_ratio", 0.0),
         )
 
         # Next state
         if next_state:
             next_state_vec = rl_agent.encode_state(
-                current_mood=next_state['current_mood'],
-                recent_moods=next_state.get('recent_moods', []),
-                time_of_day=next_state.get('time_of_day', 'afternoon'),
-                device_type=next_state.get('device_type', 'web')
+                current_mood=next_state["current_mood"],
+                recent_moods=next_state.get("recent_moods", []),
+                time_of_day=next_state.get("time_of_day", "afternoon"),
+                device_type=next_state.get("device_type", "web"),
             )
             done = False
         else:
@@ -187,16 +154,16 @@ class RecommendationService:
             action_song_mood=action_mood,
             reward=reward,
             next_state=next_state_vec,
-            done=done
+            done=done,
         )
 
         # Train the agent
         loss = rl_agent.train_step(batch_size=32)
 
         return {
-            'reward': reward,
-            'loss': loss,
-            'epsilon': rl_agent.epsilon
+            "reward": reward,
+            "loss": loss,
+            "epsilon": rl_agent.epsilon,
         }
 
 

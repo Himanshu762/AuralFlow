@@ -1,0 +1,34 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicegui/tauri/dev/tooling/cli/config.schema.json",
+  "productName": "AuralFlow",
+  "version": "0.1.0",
+  "identifier": "com.auralflow.app",
+  "build": {
+    "frontendDist": "../../frontend/out",
+    "devUrl": "http://localhost:3000",
+    "beforeDevCommand": "",
+    "beforeBuildCommand": ""
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "AuralFlow",
+        "width": 440,
+        "height": 780,
+        "resizable": true,
+        "minWidth": 360,
+        "minHeight": 500,
+        "decorations": true,
+        "transparent": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:* ws://localhost:* https://*.supabase.co https://*.supabase.in https://resources.tidal.com data: blob:; frame-src http://localhost:* blob:; media-src http://localhost:* https://*.tidal.com https://*.cloudflare.com blob: data:; connect-src 'self' http://localhost:* ws://localhost:* https://*.supabase.co https://*.supabase.in https://*.tidal.com https://resources.tidal.com blob: data:; img-src 'self' http://localhost:* https://resources.tidal.com https://*.googleusercontent.com data: blob:;"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": []
+  }
+}
