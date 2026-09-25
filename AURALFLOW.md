@@ -208,7 +208,13 @@ Startup flow:
 
 Monochrome is a full open-source music web app (Vite + vanilla JS). AuralFlow embeds it in a hidden 1x1px iframe and controls it via postMessage.
 
-The bridge (`auralflow-bridge.js`) waits for Player and MusicAPI singletons, then translates between the AuralFlow UI and Monochrome's internals.
+The bridge (`js/auralflow-bridge.js`) waits for the `Player` and `MusicAPI` singletons, then translates between the AuralFlow UI and Monochrome's internals. It is inert unless Monochrome is embedded — opening Monochrome directly is unaffected.
+
+Beyond transport, the bridge streams **real** telemetry to the shell:
+
+- `af:spectrum` — ten normalised FFT band levels read from the engine's shared `AnalyserNode`, plus the window RMS and playback position, at 15 fps while audio is playing. The shell's spectrum widget and the Now Playing waveform are drawn from this; nothing is simulated.
+- `streamInfo` on `af:trackloaded` / `af:state` — the codec, bit depth, sample rate and provider the player actually resolved, so the telemetry card shows measured figures rather than the track's advertised tier.
+- `af:quality` / `af:spatial` — the shell's Streaming Quality tier maps onto `player.setQuality()`, and the spatial toggle onto `audioContextManager.toggleBinaural()`, so those settings change playback instead of only being stored.
 
 ---
 

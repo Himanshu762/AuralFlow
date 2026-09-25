@@ -2,12 +2,31 @@
 name = "auralflow-desktop"
 version = "0.1.0"
 edition = "2021"
+description = "AuralFlow — lossless music player with a learning DJ"
+
+[lib]
+name = "auralflow_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri-plugin-shell = "2"
+# Serves the bundled Monochrome build over localhost so the app needs no
+# Node.js at runtime — the engine has to have a real HTTP origin, not file://.
+tiny_http = "0.12"
+
+# Desktop-only plugins: these have no meaning on Android/iOS, where the OS
+# owns window placement and only one instance can run anyway.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-window-state = "2"
+tauri-plugin-single-instance = "2"
+
+# Used to tie background services to the app's own lifetime, so quitting —
+# or being killed — never leaves a stray backend holding its port.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

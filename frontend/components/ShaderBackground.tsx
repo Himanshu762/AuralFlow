@@ -130,7 +130,7 @@ export default function ShaderBackground() {
     window.addEventListener('mousemove', handleMouseMove);
 
     let animationFrameId: number;
-    let startTime = Date.now();
+    const startTime = Date.now();
 
     function render() {
       if (!gl || !canvas) return;

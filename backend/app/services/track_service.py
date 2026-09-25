@@ -7,7 +7,7 @@ and this service computes mood vectors and manages the track cache.
 """
 
 from typing import Dict, List, Optional
-from app.services.mood_mapper import get_mood_vector
+from app.services.mood_mapper import resolve_mood
 from app.services.mood_service import mood_service
 import logging
 
@@ -29,13 +29,16 @@ class TrackService:
             Dict with added mood_vector and mood_label
         """
         genre = track.get("genre", "")
-        mood_vector = get_mood_vector(genre)
-        mood_label = mood_service.get_mood_label(mood_vector)
+        mood_vector, mood_known = resolve_mood(genre)
 
         return {
             **track,
             "mood_vector": mood_vector,
-            "mood_label": mood_label,
+            # Only label a mood we actually read. Without a genre the vector is
+            # the neutral centre of the space, and calling that "Balanced"
+            # would present a fallback as a finding.
+            "mood_label": mood_service.get_mood_label(mood_vector) if mood_known else "",
+            "mood_known": mood_known,
         }
 
     def compute_batch_moods(self, tracks: List[Dict]) -> List[Dict]:

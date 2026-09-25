@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, viewport-fit=cover" name="viewport"/>
+<title>AuralFlow - Full Screen Player</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;900&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-family: 'Material Symbols Outlined';
+            font-weight: normal;
+            font-style: normal;
+            font-size: 24px;
+            line-height: 1;
+            letter-spacing: normal;
+            text-transform: none;
+            display: inline-block;
+            white-space: nowrap;
+            word-wrap: normal;
+            direction: ltr;
+            -webkit-font-feature-settings: 'liga';
+            -webkit-font-smoothing: antialiased;
+        }
+        
+        /* Spring Physics Animations */
+        @keyframes popIn {
+            0% { transform: scale(0.95) translateY(20px); opacity: 0; }
+            70% { transform: scale(1.02) translateY(-5px); }
+            100% { transform: scale(1) translateY(0); opacity: 1; }
+        }
+        
+        @keyframes floatSlow {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            33% { transform: translate(30px, -50px) scale(1.1); }
+            66% { transform: translate(-20px, 20px) scale(0.9); }
+        }
+
+        @keyframes wavePulse {
+            0% { height: 4px; opacity: 0.5; }
+            50% { height: 24px; opacity: 1; }
+            100% { height: 4px; opacity: 0.5; }
+        }
+        
+        @keyframes wavePulse2 {
+            0% { height: 8px; opacity: 0.3; }
+            50% { height: 32px; opacity: 0.8; }
+            100% { height: 8px; opacity: 0.3; }
+        }
+
+        .animate-pop-in {
+            animation: popIn 0.7s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+        
+        .animate-bg-float {
+            animation: floatSlow 20s ease-in-out infinite alternate;
+        }
+
+        .wave-bar {
+            animation: wavePulse 1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+        }
+        .wave-bar-bg {
+            animation: wavePulse2 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite alternate;
+        }
+        
+        .wave-bar:nth-child(2n) { animation-delay: 0.1s; animation-duration: 0.8s; }
+        .wave-bar:nth-child(3n) { animation-delay: 0.2s; animation-duration: 1.2s; }
+        .wave-bar:nth-child(5n) { animation-delay: 0.3s; animation-duration: 0.9s; }
+        .wave-bar:nth-child(7n) { animation-delay: 0.15s; animation-duration: 1.1s; }
+
+        .wave-bar-bg:nth-child(2n) { animation-delay: 0.2s; animation-duration: 1.1s; }
+        .wave-bar-bg:nth-child(3n) { animation-delay: 0.4s; animation-duration: 1.4s; }
+
+        /* Glassmorphism Utilities */
+        .glass-panel {
+            background: rgba(28, 28, 30, 0.4);
+            backdrop-filter: blur(40px) saturate(150%);
+            -webkit-backdrop-filter: blur(40px) saturate(150%);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 30px 60px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.2);
+        }
+
+        .control-pod {
+            background: linear-gradient(145deg, rgba(255,255,255,0.05), rgba(255,255,255,0.01));
+            backdrop-filter: blur(24px) saturate(200%);
+            -webkit-backdrop-filter: blur(24px) saturate(200%);
+            box-shadow: 
+                0 30px 60px rgba(0,0,0,0.4),
+                inset 0 1px 0 rgba(255,255,255,0.2),
+                inset 0 0 20px rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 32px;
+        }
+
+        .play-btn-glow {
+            box-shadow: 0 0 30px rgba(255,255,255,0.3), inset 0 2px 4px rgba(255,255,255,0.5);
+        }
+
+        /* Custom Range Input Styling for Volume/Scrubber */
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 12px;
+            width: 12px;
+            border-radius: 50%;
+            background: #ffffff;
+            cursor: pointer;
+            margin-top: -5px; 
+            box-shadow: 0 0 10px rgba(255,255,255,0.5);
+            transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            opacity: 0;
+        }
+        input[type=range]:hover::-webkit-slider-thumb,
+        input[type=range]:active::-webkit-slider-thumb {
+            opacity: 1;
+            transform: scale(1.2);
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 2px;
+            cursor: pointer;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 1px;
+        }
+        
+        .volume-track {
+            background: linear-gradient(to right, #ffffff 75%, rgba(255, 255, 255, 0.2) 75%);
+        }
+
+        .bleed-mask {
+            mask-image: linear-gradient(to bottom, black 50%, transparent 100%);
+            -webkit-mask-image: linear-gradient(to bottom, black 50%, transparent 100%);
+        }
+
+        .oversized-time {
+            font-size: 140px;
+            font-weight: 900;
+            letter-spacing: -0.05em;
+            color: rgba(255,255,255,0.03);
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            white-space: nowrap;
+            z-index: 0;
+        }
+
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "danger": "#ff453a",
+                      "surface-container": "#1e1f23",
+                      "hi-res": "#a855f7",
+                      "on-tertiary-container": "#4a1b00",
+                      "secondary-fixed-dim": "#c8c6c8",
+                      "inverse-on-surface": "#2f3034",
+                      "on-tertiary-fixed": "#341100",
+                      "secondary-fixed": "#e4e2e4",
+                      "on-secondary": "#303032",
+                      "dolby-atmos": "#3b82f6",
+                      "on-primary-container": "#002957",
+                      "border-subtle": "#38383a",
+                      "on-tertiary": "#552000",
+                      "surface-tint": "#aac7ff",
+                      "on-primary-fixed-variant": "#00468d",
+                      "secondary": "#c8c6c8",
+                      "tertiary": "#ffb691",
+                      "tertiary-fixed": "#ffdbcb",
+                      "surface-variant": "#343539",
+                      "on-error": "#690005",
+                      "outline": "#8b91a0",
+                      "success": "#32d74b",
+                      "primary": "#aac7ff",
+                      "tertiary-container": "#eb6a12",
+                      "on-surface-variant": "#c0c6d6",
+                      "on-tertiary-fixed-variant": "#793100",
+                      "surface-container-lowest": "#0d0e12",
+                      "on-secondary-container": "#b6b4b7",
+                      "background-pure": "#000000",
+                      "primary-container": "#3e90ff",
+                      "surface-container-high": "#292a2e",
+                      "on-secondary-fixed": "#1b1b1d",
+                      "on-primary-fixed": "#001b3e",
+                      "surface-container-low": "#1a1b1f",
+                      "inverse-primary": "#005db8",
+                      "inverse-surface": "#e3e2e7",
+                      "on-error-container": "#ffdad6",
+                      "surface-bright": "#38393d",
+                      "on-surface": "#e3e2e7",
+                      "tertiary-fixed-dim": "#ffb691",
+                      "primary-fixed-dim": "#aac7ff",
+                      "error": "#ffb4ab",
+                      "secondary-container": "#474649",
+                      "glass-surface": "rgba(28, 28, 30, 0.7)",
+                      "lossless": "#10b981",
+                      "background": "#121317",
+                      "primary-fixed": "#d6e3ff",
+                      "on-primary": "#003064",
+                      "on-background": "#e3e2e7",
+                      "surface": "#121317",
+                      "outline-variant": "#414754",
+                      "surface-dim": "#121317",
+                      "surface-container-highest": "#343539",
+                      "error-container": "#93000a",
+                      "on-secondary-fixed-variant": "#474649"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px",
+                      "4xl": "2rem"
+              },
+              "spacing": {
+                      "stack-sm": "8px",
+                      "unit": "4px",
+                      "gutter": "16px",
+                      "stack-lg": "32px",
+                      "stack-md": "16px",
+                      "margin-desktop": "40px",
+                      "margin-mobile": "20px"
+              },
+              "fontFamily": {
+                      "headline-xl": [
+                              "Inter"
+                      ],
+                      "label-sm": [
+                              "Inter"
+                      ],
+                      "headline-lg-mobile": [
+                              "Inter"
+                      ],
+                      "label-md": [
+                              "Inter"
+                      ],
+                      "headline-md": [
+                              "Inter"
+                      ],
+                      "body-md": [
+                              "Inter"
+                      ],
+                      "body-lg": [
+                              "Inter"
+                      ],
+                      "headline-lg": [
+                              "Inter"
+                      ]
+              },
+              "fontSize": {
+                      "headline-xl": [
+                              "48px",
+                              {
+                                      "lineHeight": "1.1",
+                                      "letterSpacing": "-0.04em",
+                                      "fontWeight": "900"
+                              }
+                      ],
+                      "label-sm": [
+                              "11px",
+                              {
+                                      "lineHeight": "1.0",
+                                      "letterSpacing": "0.05em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "headline-lg-mobile": [
+                              "36px",
+                              {
+                                      "lineHeight": "1.1",
+                                      "letterSpacing": "-0.03em",
+                                      "fontWeight": "900"
+                              }
+                      ],
+                      "label-md": [
+                              "13px",
+                              {
+                                      "lineHeight": "1.0",
+                                      "letterSpacing": "0.02em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "headline-md": [
+                              "18px",
+                              {
+                                      "lineHeight": "1.3",
+                                      "letterSpacing": "0.15em",
+                                      "fontWeight": "300"
+                              }
+                      ],
+                      "body-md": [
+                              "15px",
+                              {
+                                      "lineHeight": "1.5",
+                                      "letterSpacing": "-0.01em",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "body-lg": [
+                              "17px",
+                              {
+                                      "lineHeight": "1.5",
+                                      "letterSpacing": "-0.01em",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "headline-lg": [
+                              "32px",
+                              {
+                                      "lineHeight": "1.2",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "900"
+                              }
+                      ]
+              }
+      },
+          },
+        }
+      </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+</head>
+<body class="bg-background-pure text-on-surface h-screen w-screen overflow-hidden font-body-md select-none">
+<!-- WebGL Dynamic Background -->
+<!-- STITCH_SHADER_START:ANIMATION_110 class="absolute inset-0 w-full h-full z-0" -->
+<div class="absolute inset-0 w-full h-full z-0" style="display:block;">
+<canvas id="shader-canvas-ANIMATION_110" style="display:block;width:100%;height:100%"></canvas>
+<script>
+(function() {
+  const canvas = document.getElementById('shader-canvas-ANIMATION_110');
+
+  // Sync the WebGL drawing-buffer size with the CSS-driven layout size.
+  // This fires on initial layout and whenever the element is resized.
+  function syncSize() {
+    const w = canvas.clientWidth  || 1280;
+    const h = canvas.clientHeight || 720;
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width  = w;
+      canvas.height = h;
+    }
+  }
+  if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(syncSize).observe(canvas);
+  }
+  syncSize();
+
+  const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+  if (!gl) return;
+  const vs = `attribute vec2 a_position;
+varying vec2 v_texCoord;
+void main() {
+  v_texCoord = a_position * 0.5 + 0.5;
+  gl_Position = vec4(a_position, 0.0, 1.0);
+}`;
+  const fs = `precision highp float;
+uniform float u_time;
+uniform vec2 u_resolution;
+uniform vec2 u_mouse;
+varying vec2 v_texCoord;
+
+// Simplified noise function for performance
+float hash(vec2 p) {
+    p = fract(p * vec2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+}
+
+float noise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    float a = hash(i);
+    float b = hash(i + vec2(1.0, 0.0));
+    float c = hash(i + vec2(0.0, 1.0));
+    float d = hash(i + vec2(1.0, 1.0));
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+}
+
+void main() {
+    vec2 uv = v_texCoord;
+    
+    // Create flowing organic movement
+    float n = noise(uv * 3.0 + u_time * 0.2);
+    n += 0.5 * noise(uv * 6.0 - u_time * 0.4);
+    
+    // Core colors from AuralFlow design system
+    vec3 colorA = vec3(0.0, 0.0, 0.0); // Black background
+    vec3 colorB = vec3(0.039, 0.518, 1.0); // #0a84ff - AuralFlow Blue
+    vec3 colorC = vec3(0.659, 0.333, 0.969); // #a855f7 - Hi-Res Purple
+    
+    // Mix colors based on noise and position
+    vec3 color = mix(colorA, colorB, n * 0.4);
+    color = mix(color, colorC, pow(n, 3.0) * 0.3);
+    
+    // Add a glowing light source that follows the mouse
+    float dist = distance(uv, u_mouse / u_resolution);
+    float glow = 0.05 / (dist + 0.1);
+    color += colorB * glow * 0.5;
+    
+    // Soft vignette
+    float vignette = 1.0 - length(uv - 0.5) * 1.2;
+    color *= clamp(vignette, 0.0, 1.0);
+
+    gl_FragColor = vec4(color, 1.0);
+}`;
+  function cs(type, src) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    return s;
+  }
+  const prog = gl.createProgram();
+  gl.attachShader(prog, cs(gl.VERTEX_SHADER, vs));
+  gl.attachShader(prog, cs(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(prog);
+  gl.useProgram(prog);
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+  const pos = gl.getAttribLocation(prog, 'a_position');
+  gl.enableVertexAttribArray(pos);
+  gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+  const uTime = gl.getUniformLocation(prog, 'u_time');
+  const uRes = gl.getUniformLocation(prog, 'u_resolution');
+  const uMouse = gl.getUniformLocation(prog, 'u_mouse');
+
+  // u_mouse is in pixel coordinates matching u_resolution (ShaderToy convention).
+  // Shaders that need normalized coords should use: u_mouse / u_resolution.
+  let mouse = { x: canvas.width / 2, y: canvas.height / 2 };
+  window.addEventListener('mousemove', (event) => {
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width && rect.height) {
+      const nx = (event.clientX - rect.left) / rect.width;
+      const ny = 1.0 - (event.clientY - rect.top) / rect.height;
+      mouse.x = nx * canvas.width;
+      mouse.y = ny * canvas.height;
+    }
+  });
+
+  function render(t) {
+    if (typeof ResizeObserver === 'undefined') syncSize();
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    if (uTime) gl.uniform1f(uTime, t * 0.001);
+    if (uRes) gl.uniform2f(uRes, canvas.width, canvas.height);
+    if (uMouse) gl.uniform2f(uMouse, mouse.x, mouse.y);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    requestAnimationFrame(render);
+  }
+  render(0);
+})();
+</script>
+</div>
+<!-- STITCH_SHADER_END:ANIMATION_110 -->
+<!-- Main Player Container -->
+<div class="relative z-10 flex flex-col h-full w-full mx-auto pt-safe-top pb-safe-bottom overflow-hidden">
+<!-- Bleed Album Art Background (Centerpiece) -->
+<div class="absolute top-0 left-0 w-full h-[60vh] -z-10 bleed-mask">
+<img alt="Album Artwork" class="w-full h-full object-cover opacity-80 mix-blend-luminosity transform scale-105 contrast-125 saturate-150" data-alt="A striking, high-contrast album cover artwork featuring a sleek, glowing geometric structure suspended in absolute darkness." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDRpxTMa5MvUP9TYTNSPE4iIGmDxvvTctHY5-BOqHxDMgoejPaYqFp4vis3HKphCabJybuL5mxiVhK8tDoI_sey3m4Zp5IzQp7eO-c_tWehhOxwWm4uhO-oU1sYIoVbKD6-e5QLWaF7-UQbsfZR1Lbf8mTs4UCr2dOi6-MZ-MUu8Mg-hZ5PrkKjiWMLs0luCqNSdYmwEssO2WNd9x5ACth2uP_F3JvGnaqzdzteIcftnYys28oGYwPJlA"/>
+<div class="absolute inset-0 bg-gradient-to-b from-transparent via-black/30 to-black"></div>
+</div>
+<!-- Top App Bar -->
+<header class="flex justify-between items-center py-4 px-margin-mobile w-full bg-transparent">
+<button aria-label="Go back" class="p-2 -ml-2 rounded-full text-white/80 hover:text-white hover:bg-white/10 active:scale-95 transition-all duration-200 ease-out backdrop-blur-md">
+<span class="material-symbols-outlined text-[28px]" data-icon="keyboard_arrow_down">keyboard_arrow_down</span>
+</button>
+<div class="flex flex-col items-center">
+<span class="font-label-sm text-label-sm text-white/60 uppercase tracking-[0.3em]">Now Playing</span>
+</div>
+<button aria-label="More options" class="p-2 -mr-2 rounded-full text-white/80 hover:text-white hover:bg-white/10 active:scale-95 transition-all duration-200 ease-out backdrop-blur-md">
+<span class="material-symbols-outlined text-[28px]" data-icon="more_vert">more_vert</span>
+</button>
+</header>
+<!-- Main Content Area -->
+<main class="flex-1 flex flex-col justify-end w-full px-margin-mobile pb-6 z-20">
+<!-- Track Info (High Contrast Typography) -->
+<div class="w-full flex flex-col items-start mb-8 animate-pop-in">
+<div class="flex justify-between items-end w-full mb-1">
+<div class="flex flex-col flex-1 pr-4">
+<h1 class="font-headline-lg-mobile text-headline-lg-mobile text-white truncate drop-shadow-lg leading-tight tracking-tight">Midnight Resonance</h1>
+<h2 class="font-headline-md text-headline-md text-white/70 truncate uppercase tracking-widest mt-1">Aura Synthetica</h2>
+</div>
+<button aria-label="Add to favorites" class="p-3 rounded-full bg-white/5 backdrop-blur-md border border-white/10 text-white hover:text-danger hover:border-danger/50 hover:bg-danger/10 active:scale-95 transition-all duration-300 shadow-lg">
+<span class="material-symbols-outlined" data-icon="favorite_border">favorite_border</span>
+</button>
+</div>
+<!-- Quality Badge -->
+<div class="mt-4 flex items-center gap-2 px-3 py-1.5 rounded-full border border-hi-res/50 bg-hi-res/20 backdrop-blur-md shadow-[0_0_15px_rgba(168,85,247,0.3)]">
+<span class="font-label-sm text-[10px] text-white font-bold uppercase tracking-wider">Hi-Res Lossless</span>
+<span class="material-symbols-outlined text-[14px] text-hi-res drop-shadow-[0_0_5px_rgba(168,85,247,1)]" data-icon="graphic_eq" data-weight="fill">graphic_eq</span>
+</div>
+</div>
+<!-- Sonic Wave Progress Bar -->
+<div class="w-full flex flex-col gap-3 mb-10">
+<div class="relative flex items-center justify-center h-16 w-full opacity-90 cursor-pointer group">
+<!-- Layered Waveform -->
+<div class="absolute inset-0 flex items-center justify-center gap-[2px] opacity-30">
+<div class="w-2 bg-white/50 rounded-full wave-bar-bg h-6"></div>
+<div class="w-2 bg-white/50 rounded-full wave-bar-bg h-4"></div>
+<div class="w-2 bg-white/50 rounded-full wave-bar-bg h-8"></div>
+<div class="w-2 bg-white/50 rounded-full wave-bar-bg h-5"></div>
+<div class="w-2 bg-white/50 rounded-full wave-bar-bg h-10"></div>
+<div class="w-2 bg-white/50 rounded-full wave-bar-bg h-12"></div>
+<div class="w-2 bg-white/50 rounded-full wave-bar-bg h-7"></div>
+<div class="w-2 bg-white/50 rounded-full wave-bar-bg h-9"></div>
+<div class="w-2 bg-white/50 rounded-full wave-bar-bg h-5"></div>
+<div class="w-2 bg-white/50 rounded-full wave-bar-bg h-8"></div>
+<div class="w-2 bg-white/50 rounded-full wave-bar-bg h-11"></div>
+<div class="w-2 bg-white/50 rounded-full wave-bar-bg h-4"></div>
+</div>
+<div class="absolute inset-0 flex items-center justify-center gap-[4px] z-10">
+<div class="w-1 bg-white rounded-full wave-bar h-2"></div>
+<div class="w-1 bg-white rounded-full wave-bar h-4"></div>
+<div class="w-1 bg-white rounded-full wave-bar h-3"></div>
+<div class="w-1 bg-white rounded-full wave-bar h-6"></div>
+<div class="w-1 bg-white rounded-full wave-bar h-8"></div>
+<div class="w-1 bg-white rounded-full wave-bar h-5"></div>
+<div class="w-1 bg-white rounded-full wave-bar h-10"></div>
+<div class="w-1 bg-white rounded-full wave-bar h-7"></div>
+<div class="w-1 bg-white rounded-full wave-bar h-12"></div>
+<div class="w-1 bg-white rounded-full wave-bar h-9"></div>
+<div class="w-1 bg-white rounded-full wave-bar h-11 bg-white/40 group-hover:bg-white/60 transition-colors"></div>
+<div class="w-1 bg-white rounded-full wave-bar h-6 bg-white/40 group-hover:bg-white/60 transition-colors"></div>
+<div class="w-1 bg-white rounded-full wave-bar h-8 bg-white/40 group-hover:bg-white/60 transition-colors"></div>
+<div class="w-1 bg-white rounded-full wave-bar h-4 bg-white/40 group-hover:bg-white/60 transition-colors"></div>
+<div class="w-1 bg-white rounded-full wave-bar h-7 bg-white/40 group-hover:bg-white/60 transition-colors"></div>
+<div class="w-1 bg-white rounded-full wave-bar h-3 bg-white/40 group-hover:bg-white/60 transition-colors"></div>
+<div class="w-1 bg-white rounded-full wave-bar h-5 bg-white/40 group-hover:bg-white/60 transition-colors"></div>
+<div class="w-1 bg-white rounded-full wave-bar h-2 bg-white/40 group-hover:bg-white/60 transition-colors"></div>
+<div class="w-1 bg-white rounded-full wave-bar h-4 bg-white/40 group-hover:bg-white/60 transition-colors"></div>
+<div class="w-1 bg-white rounded-full wave-bar h-2 bg-white/40 group-hover:bg-white/60 transition-colors"></div>
+</div>
+</div>
+<div class="flex justify-between items-center px-1">
+<span class="font-label-sm text-[12px] text-white/70 tracking-wider">2:45</span>
+<span class="font-label-sm text-[12px] text-white/70 tracking-wider">-1:32</span>
+</div>
+</div>
+<!-- Control Pod -->
+<div class="control-pod w-full px-6 py-8 flex flex-col gap-6 relative overflow-hidden">
+<!-- Oversized Background Timestamp -->
+<div class="oversized-time">2:45</div>
+<!-- Subtle pod inner glow -->
+<div class="absolute inset-0 bg-gradient-to-tr from-white/10 to-transparent pointer-events-none"></div>
+<!-- Main Playback Controls -->
+<div class="flex items-center justify-between w-full relative z-10">
+<button aria-label="Shuffle" class="p-2 text-white/50 hover:text-white active:scale-95 transition-colors duration-200">
+<span class="material-symbols-outlined text-[22px]" data-icon="shuffle">shuffle</span>
+</button>
+<div class="flex items-center justify-center gap-6">
+<button aria-label="Previous track" class="p-3 text-white/80 hover:text-white active:scale-95 transition-all duration-200">
+<span class="material-symbols-outlined text-[36px]" data-icon="skip_previous" data-weight="fill">skip_previous</span>
+</button>
+<!-- Primary Play Button (Physical feel) -->
+<button aria-label="Play" class="w-20 h-20 bg-white rounded-full flex items-center justify-center text-black play-btn-glow active:scale-95 transition-all duration-200 ease-out transform">
+<span class="material-symbols-outlined text-[44px] ml-1" data-icon="play_arrow" data-weight="fill">play_arrow</span>
+</button>
+<button aria-label="Next track" class="p-3 text-white/80 hover:text-white active:scale-95 transition-all duration-200">
+<span class="material-symbols-outlined text-[36px]" data-icon="skip_next" data-weight="fill">skip_next</span>
+</button>
+</div>
+<button aria-label="Repeat" class="p-2 text-white/50 hover:text-white active:scale-95 transition-colors duration-200">
+<span class="material-symbols-outlined text-[22px]" data-icon="repeat">repeat</span>
+</button>
+</div>
+<!-- Volume Control -->
+<div class="flex items-center gap-4 w-full mt-2 relative z-10">
+<span class="material-symbols-outlined text-[18px] text-white/50" data-icon="volume_down">volume_down</span>
+<div class="relative w-full h-4 flex items-center flex-1">
+<input aria-label="Adjust volume" class="volume-track absolute w-full z-10" max="100" min="0" type="range" value="75"/>
+</div>
+<span class="material-symbols-outlined text-[18px] text-white/50" data-icon="volume_up">volume_up</span>
+</div>
+</div>
+<!-- Bottom Actions -->
+<div class="flex justify-between items-center w-full mt-6 px-4 z-20">
+<button aria-label="Connect device" class="px-4 py-2 rounded-full bg-white/5 backdrop-blur-md border border-white/10 flex items-center gap-2 text-white/80 hover:text-white hover:bg-white/10 active:scale-95 transition-all">
+<span class="material-symbols-outlined text-[18px]" data-icon="speaker_group">speaker_group</span>
+<span class="font-label-sm text-[12px] tracking-wide">Living Room...</span>
+</button>
+<button aria-label="Lyrics" class="p-3 rounded-full bg-white/5 backdrop-blur-md border border-white/10 text-white/80 hover:text-white hover:bg-white/10 active:scale-95 transition-all">
+<span class="material-symbols-outlined text-[20px]" data-icon="lyrics">lyrics</span>
+</button>
+</div>
+</main>
+</div>
+</body></html>

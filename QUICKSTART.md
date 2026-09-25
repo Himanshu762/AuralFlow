@@ -1,293 +1,173 @@
-# 🚀 AuralFlow Quick Start Guide
+# AuralFlow — Quick Start
 
-Get AuralFlow up and running in **10 minutes**.
-
----
-
-## ⚡ Prerequisites Check
-
-Before starting, ensure you have:
-
-- [ ] **Python 3.13+** installed (`python3 --version`)
-- [ ] **Node.js 18+** installed (`node --version`)
-- [ ] **PostgreSQL 14+** installed and running
-- [ ] **Spotify Developer credentials** (Client ID & Secret)
+AuralFlow is a native app: one window, one process to launch. It runs on
+Windows, macOS and Linux, and the same UI builds for Android and iOS.
 
 ---
 
-## 📋 Step-by-Step Setup
+## What you need
 
-### 1️⃣ Clone & Navigate
+| | Why | Minimum |
+|---|---|---|
+| **Rust + Cargo** | builds the native shell | stable toolchain |
+| **Node.js** | the UI and the audio engine | 20+ |
+| **Python** | the recommendation backend | 3.11+ |
+| **Monochrome** | the audio engine — a separate project, fetched into `monochrome_app/` | see below |
+
+Linux also needs the webview system libraries:
 
 ```bash
-cd /Users/anonymouse/AuralFlow
+sudo pacman -S webkit2gtk-4.1 base-devel curl wget file openssl libayatana-appindicator librsvg
 ```
 
----
+(Verified on CachyOS: `webkit2gtk-4.1` 2.52.6 plus `libayatana-appindicator`
+and `librsvg` are enough to build and run.)
 
-### 2️⃣ PostgreSQL Database Setup
-
-**Option A: Using createdb (Mac/Linux)**
 ```bash
-# Create the database
-createdb auralflow_db
-
-# Or with a specific user
-createdb -U postgres auralflow_db
-```
-
-**Option B: Using psql**
-```bash
-psql -U postgres
-CREATE DATABASE auralflow_db;
-\q
-```
-
-**Create a database user (optional but recommended):**
-```bash
-psql -U postgres
-CREATE USER auralflow WITH PASSWORD 'your_password';
-GRANT ALL PRIVILEGES ON DATABASE auralflow_db TO auralflow;
-\q
+sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file libssl-dev libayatana-appindicator3-dev librsvg2-dev
 ```
 
 ---
 
-### 3️⃣ Backend Configuration
+## First run
 
 ```bash
-cd backend
-
-# Activate virtual environment (already created)
-source venv/bin/activate
-
-# Copy environment template
-cp .env.example .env
+cd frontend && npm install && cd ..
+cd desktop && npm install && cd ..
+# The audio engine is a separate upstream project and is not in this repo.
+git clone https://github.com/monochrome-music/monochrome monochrome_app
+git -C monochrome_app checkout 88481062d3981e12be3bafaa6c8a6c4f8ab4b310
+node engine/apply.mjs          # graft in AuralFlow's bridge
+cd monochrome_app && npm install && cd ..
+python3 -m venv backend/venv && backend/venv/bin/pip install -r backend/requirements.txt
 ```
 
-**Edit `.env` with your credentials:**
+The backend pulls PyTorch, so that last step downloads roughly a gigabyte.
+
+Then launch the app:
 
 ```bash
-nano .env  # or use your preferred editor
+cd desktop && npm run dev
 ```
 
-**Required settings:**
-```env
-# Spotify (REPLACE WITH YOUR CREDENTIALS)
-SPOTIFY_CLIENT_ID=your_actual_spotify_client_id
-SPOTIFY_CLIENT_SECRET=your_actual_spotify_client_secret
-SPOTIFY_REDIRECT_URI=http://localhost:3000/api/auth/callback
+That is the whole thing. The native shell starts the audio engine and the
+recommendation backend itself and shuts them down when you close the window —
+there is nothing else to run.
 
-# Database (adjust if you used different credentials)
-DATABASE_URL=postgresql://auralflow:your_password@localhost:5432/auralflow_db
+For everyday use, build it once and install it instead, so it lives in your
+application menu like any other player:
 
-# Security (generate a random secret)
-SECRET_KEY=your_super_secret_key_here_change_this_in_production
-
-# Other settings (can keep defaults)
-FRONTEND_URL=http://localhost:3000
-DEBUG=True
-```
-
-**Generate a SECRET_KEY:**
 ```bash
-python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+cd desktop && npm run build && cd ..
+./desktop/install-local.sh
 ```
 
 ---
 
-### 4️⃣ Run Database Migrations
+## Running the UI in a browser instead
+
+Useful when you are iterating on the interface and do not want to rebuild the
+shell:
 
 ```bash
-cd /Users/anonymouse/AuralFlow/backend
-source venv/bin/activate
-
-# Create initial migration
-alembic revision --autogenerate -m "Initial schema"
-
-# Apply migrations
-alembic upgrade head
+python3 start.py
 ```
 
-If you see errors, ensure:
-1. PostgreSQL is running
-2. Database exists
-3. DATABASE_URL in `.env` is correct
+This starts all three services with health checks and prints what is up. Open
+<http://localhost:3000>. `python3 start.py --app` also launches the native
+window against those services.
+
+`start.py` tells you exactly what is missing if a dependency is not installed.
 
 ---
 
-### 5️⃣ Start the Backend
+## Installing it like a normal app
+
+Once built, register AuralFlow with the desktop so it opens from the
+application menu — no terminal, nothing to start by hand:
 
 ```bash
-cd /Users/anonymouse/AuralFlow/backend
-source venv/bin/activate
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+./desktop/install-local.sh
 ```
 
-**Test it:**
-- Open: http://localhost:8000
-- API Docs: http://localhost:8000/docs
-- Health check: http://localhost:8000/health
-
-You should see:
-```json
-{
-  "message": "Welcome to AuralFlow API",
-  "version": "1.0.0",
-  "status": "running"
-}
-```
+That puts an `auralflow` command on your `PATH`, installs the icons, and writes
+a launcher entry. From then on AuralFlow behaves like any other music player:
+click it, and the window, the audio engine and the AI DJ all come up together;
+close the window and they all go away.
 
 ---
 
-### 6️⃣ Configure Frontend Environment
+## Packaging
 
 ```bash
-cd /Users/anonymouse/AuralFlow/frontend
-
-# Create environment file
-touch .env.local
+cd desktop && npm run build
 ```
 
-**Add to `.env.local`:**
-```env
-NEXT_PUBLIC_API_URL=http://localhost:8000
-NEXT_PUBLIC_SPOTIFY_CLIENT_ID=your_spotify_client_id
-```
+One command — it builds the audio engine and the interface first if either is
+out of date, then the native shell. Installers land in
+`desktop/src-tauri/target/release/bundle/` as `.deb`, `.rpm`, `.AppImage`,
+`.msi` or `.dmg` depending on the host.
 
----
+The audio engine is bundled inside the app, so an installed copy needs no
+Node.js. The AI DJ is the exception: it needs a Python environment, which the
+installers do not carry. Point `AURALFLOW_ROOT` at a checkout that has
+`backend/venv` (`install-local.sh` does this for you) and the DJ comes up;
+without it the player runs normally and reports the DJ as offline.
 
-### 7️⃣ Start the Frontend
+## Phones
 
 ```bash
-cd /Users/anonymouse/AuralFlow/frontend
-npm run dev
+cd desktop
+npm run android:init && npm run android:dev   # needs Android Studio + NDK
+npm run ios:init && npm run ios:dev           # needs Xcode, macOS only
 ```
 
-**Test it:**
-- Open: http://localhost:3000
+A phone cannot run the Node and Python services locally, so point the app at a
+machine that does. Create `frontend/.env.local`:
 
----
-
-### 8️⃣ Spotify Developer Setup
-
-1. **Go to:** https://developer.spotify.com/dashboard
-2. **Log in** with your Spotify account
-3. **Create an App:**
-   - Click "Create App"
-   - Name: `AuralFlow`
-   - Description: `AI-powered music flow player`
-   - Redirect URI: `http://localhost:3000/api/auth/callback`
-   - Check "Web API"
-   - Click "Save"
-4. **Get Credentials:**
-   - Click "Settings"
-   - Copy **Client ID** and **Client Secret**
-   - Add them to `backend/.env`
-
----
-
-## ✅ Verification Checklist
-
-Backend running?
-```bash
-curl http://localhost:8000/health
-# Should return: {"status":"healthy"}
 ```
-
-Frontend running?
-```bash
-curl http://localhost:3000
-# Should return HTML
-```
-
-Database connected?
-```bash
-cd backend
-source venv/bin/activate
-python3 -c "from app.db.base import engine; print(engine.connect())"
-# Should connect without errors
-```
-
-API endpoints working?
-```bash
-curl http://localhost:8000/docs
-# Should show Swagger UI
+NEXT_PUBLIC_MONOCHROME_URL=http://192.168.1.20:5173
+NEXT_PUBLIC_API_BASE=http://192.168.1.20:8000/api/v1
 ```
 
 ---
 
-## 🎯 Next Steps
+## Playback
 
-Once everything is running:
+The audio engine reaches its catalogue and streams through backend instances
+it resolves at startup. Nothing needs configuring when the vendored engine is
+current.
 
-1. **Test Spotify Auth:**
-   - Visit: http://localhost:8000/api/v1/auth/login
-   - Should return a Spotify authorization URL
+**If nothing plays, the vendored engine is probably stale.** Backend
+infrastructure moved, and builds from before that migration point at hosts that
+are offline. The failure is quiet — search still works, because it falls
+through to a public metadata API, and artwork still loads — so the only symptom
+is that pressing play does nothing at all.
 
-2. **Explore API Docs:**
-   - Visit: http://localhost:8000/docs
-   - Try the interactive API endpoints
+The build warns about this, and `Settings → Catalogue & Streaming` shows which
+backends the engine resolved, flagging it when there is no streaming instance.
+The fix is to re-vendor; see [engine/README.md](engine/README.md).
 
-3. **Build the Frontend:**
-   - Start creating the player UI
-   - Integrate Spotify Web Playback SDK
-   - Add mood visualization
+You can also point the engine at your own endpoint from that settings screen,
+or add an instance URL there. Both take effect immediately — no rebuild.
 
----
+## Tests
 
-## 🐛 Common Issues
-
-### "Database connection failed"
-**Fix:**
 ```bash
-# Check if PostgreSQL is running
-brew services list  # Mac
-sudo systemctl status postgresql  # Linux
-
-# Start PostgreSQL
-brew services start postgresql  # Mac
-sudo systemctl start postgresql  # Linux
+cd backend && venv/bin/python -m pytest
 ```
 
-### "Module not found"
-**Fix:**
-```bash
-cd backend
-source venv/bin/activate
-pip install -r requirements.txt
-```
+## Keyboard
 
-### "Spotify authentication error"
-**Fix:**
-- Verify Client ID and Secret in `.env`
-- Check redirect URI in Spotify Dashboard matches exactly
-- Ensure you've added `http://localhost:3000/api/auth/callback`
-
-### "Port already in use"
-**Fix:**
-```bash
-# Kill process on port 8000
-lsof -ti:8000 | xargs kill -9
-
-# Kill process on port 3000
-lsof -ti:3000 | xargs kill -9
-```
-
----
-
-## 📚 Learn More
-
-- **Full README:** `README.md`
-- **API Documentation:** http://localhost:8000/docs (when backend is running)
-- **Backend Code:** `backend/app/`
-- **ML Agent:** `ml/agents/music_rl_agent.py`
-- **Spotify API Docs:** https://developer.spotify.com/documentation/web-api
-
----
-
-## 🎉 You're Ready!
-
-Your AuralFlow development environment is set up and ready to build the future of music listening!
-
-**Happy coding! 🎵**
+| Key | Action |
+|---|---|
+| `Space` | play / pause |
+| `←` `→` | seek ∓10s |
+| `↑` `↓` | volume ±5% |
+| `Ctrl/⌘` + `←` `→` | previous / next track |
+| `Ctrl/⌘` + `K` | search |
+| `Ctrl/⌘` + `L` | like the current track |
+| `Ctrl/⌘` + `1…5` | switch section |
+| `M` `S` `R` | mute · shuffle · repeat |
+| `Esc` | close Now Playing |
+| `F11` | fullscreen |

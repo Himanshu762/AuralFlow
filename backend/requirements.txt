@@ -13,6 +13,15 @@ alembic==1.14.0
 requests==2.32.3
 
 # Machine Learning & Data Science
+#
+# The RL agent is a small MLP trained on the CPU, so the CPU-only build of
+# torch is what is wanted: the default PyPI wheel bundles CUDA and is roughly
+# 700 MB larger for no benefit here. Install torch first from PyTorch's CPU
+# index, then this file:
+#
+#   pip install torch==2.9.0 --index-url https://download.pytorch.org/whl/cpu
+#   pip install -r requirements.txt
+#
 torch==2.9.0
 numpy==2.2.0
 

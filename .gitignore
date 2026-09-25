@@ -1,93 +1,41 @@
-# ========================================
-# AuralFlow — Root .gitignore
-# ========================================
-
-# ---------- OS ----------
-.DS_Store
-Thumbs.db
-Desktop.ini
-*.swp
-*.swo
-*~
-
-# ---------- IDEs ----------
-.idea/
-.vscode/
-*.code-workspace
-.claude/
-
-# ---------- Python (backend) ----------
+# Dependencies
+node_modules/
 backend/venv/
-backend/__pycache__/
-backend/**/__pycache__/
-backend/**/*.pyc
-backend/**/*.pyo
-*.pyc
-*.pyo
+backend/.venv/
+
+# Vendored audio engine (separate upstream project)
+monochrome_app/
+
+# Build output
+frontend/.next/
+frontend/out/
+desktop/src-tauri/target/
+desktop/src-tauri/gen/android/
+desktop/src-tauri/gen/apple/
+
+# Caches
 __pycache__/
+*.py[cod]
 *.egg-info/
-dist/
-build/
+.pytest_cache/
+*.tsbuildinfo
+coverage/
 
-# ---------- Backend data ----------
-backend/auralflow.db
+# Local data
 backend/*.db
-*.db
+ml/models/
+*.log
 
-# ---------- Environment / Secrets ----------
+# Secrets (.env.example is committed)
 .env
 .env.local
 .env.*.local
-backend/.env
-frontend/.env.local
-*.env.example
 
-# ---------- Node / Frontend ----------
-node_modules/
-frontend/.next/
-frontend/out/
-frontend/.vercel
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
-
-# ---------- Monochrome ----------
-monochrome_app/node_modules/
-monochrome_app/dist/
-monochrome_app/dev-dist/
-monochrome_app/.vite/
-monochrome_app/.tmp/
-monochrome_app/.storage/
-monochrome_app/auth_storage/
-monochrome_app/www/
-monochrome_app/bin/
-monochrome_app/.vitest-attachments/
-monochrome_app/**/__screenshots__/
-
-# ---------- Tauri / Rust ----------
-desktop/src-tauri/target/
-desktop/src-tauri/icons/
-*.exe
-*.dll
-*.so
-*.dylib
-
-# ---------- ML / Model artifacts ----------
-ml/models/*.pt
-ml/models/*.pth
-ml/models/*.ckpt
-ml/models/*.bin
-*.pt
-*.pth
-*.ckpt
-
-# ---------- Logs ----------
-*.log
-logs/
-
-# ---------- Misc ----------
-.tmp/
-*.local
-coverage/
-.nyc_output/
+# Editor / OS
+.idea/
+.vscode/
+.claude/
+.DS_Store
+Thumbs.db
+*.sw[op]
+*~

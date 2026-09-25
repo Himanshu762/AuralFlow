@@ -1,33 +1,27 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Play, Pause, AudioLines, ListMusic } from "lucide-react";
+import { Play, Pause, AudioLines, ListMusic, GripVertical, Sparkles, X, Plus } from "lucide-react";
 import { usePlayerStore, type Track } from "../stores/playerStore";
-
-function qualityBadge(track: Track) {
-  if (track.audioQuality === "HI_RES_LOSSLESS")
-    return { label: "Hi-Res", cls: "bg-purple-500/20 text-purple-400 border-purple-500/30" };
-  if (track.audioQuality === "LOSSLESS")
-    return { label: "Lossless", cls: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" };
-  if (track.audioModes?.includes("DOLBY_ATMOS"))
-    return { label: "Atmos", cls: "bg-blue-500/20 text-blue-400 border-blue-500/30" };
-  return null;
-}
-
-function fmtDuration(s?: number) {
-  if (!s) return "";
-  const m = Math.floor(s / 60);
-  const sec = Math.floor(s % 60);
-  return `${m}:${sec.toString().padStart(2, "0")}`;
-}
+import { fmtTime, qualityBadge, rankTracks } from "../lib/format";
 
 interface Props {
   onPlay: (track: Track) => void;
   onToggle: () => void;
+  compact: boolean;
+  /** Queue operations, which act on the engine's own queue. */
+  queue: {
+    get: () => void;
+    add: (tracks: Track[], next?: boolean) => void;
+    remove: (index: number) => void;
+    move: (from: number, to: number) => void;
+    clear: () => void;
+    play: (index: number) => void;
+  };
 }
 
-export default function QueueTab({ onPlay, onToggle }: Props) {
+export default function QueueTab({ onPlay, onToggle, compact, queue }: Props) {
   const track = usePlayerStore((s) => s.track);
   const playing = usePlayerStore((s) => s.playing);
   const searchResults = usePlayerStore((s) => s.searchResults);
@@ -35,144 +29,269 @@ export default function QueueTab({ onPlay, onToggle }: Props) {
   const currentTime = usePlayerStore((s) => s.currentTime);
   const duration = usePlayerStore((s) => s.duration);
 
-  const currentIdx = track ? searchResults.findIndex((t) => t.id === track.id) : -1;
-  const upNext = currentIdx >= 0 ? searchResults.slice(currentIdx + 1) : searchResults;
+  const items = usePlayerStore((s) => s.queue);
+  const queueIndex = usePlayerStore((s) => s.queueIndex);
+  const monoReady = usePlayerStore((s) => s.monoReady);
+  const aiRanking = usePlayerStore((s) => s.aiRanking);
 
-  const aiSuggestions = [...searchResults]
-    .filter((t) => t.id !== track?.id && !upNext.find((q) => q.id === t.id))
-    .sort((a, b) => (aiScores.get(b.id) || 0) - (aiScores.get(a.id) || 0))
-    .slice(0, 5);
+  /* Ask the engine for its queue once it is up. After that the engine pushes
+     an update whenever the queue or the position in it changes. */
+  useEffect(() => {
+    if (monoReady) queue.get();
+  }, [monoReady, queue]);
+
+  /* Everything after the current position. These are real queue indices, so
+     removing or reordering acts on the right entry. */
+  const upNext = items
+    .map((t, i) => ({ track: t, index: i }))
+    .filter(({ index }) => index > queueIndex);
+
+  const queued = new Set(items.map((t) => t.id));
+  const aiSuggestions = rankTracks(
+    searchResults.filter((t) => t.id !== track?.id && !queued.has(t.id)),
+    aiRanking
+  ).slice(0, 6);
+
+  /* Drag-to-reorder. The index being dragged lives here; the drop target is
+     whichever row the pointer is over. */
+  const [dragging, setDragging] = useState<number | null>(null);
+  const [dropTarget, setDropTarget] = useState<number | null>(null);
+
+  const endDrag = () => {
+    if (dragging !== null && dropTarget !== null && dragging !== dropTarget) {
+      queue.move(dragging, dropTarget);
+    }
+    setDragging(null);
+    setDropTarget(null);
+  };
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
+  const badge = track ? qualityBadge(track) : null;
+  const remaining = upNext.reduce((sum, { track: t }) => sum + (t.duration ?? 0), 0);
+
+  if (!track && upNext.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-28 text-center">
+        <ListMusic className="w-12 h-12 text-outline mb-4" />
+        <p className="text-headline-md text-on-surface-variant">Queue is empty</p>
+        <p className="text-body-md text-outline mt-1.5">Play something to start the flow.</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex flex-col gap-6 pt-4">
-      <h1 className="text-2xl font-bold tracking-tight">Queue</h1>
+    <div className={`grid gap-7 max-w-[1500px] items-start ${compact ? "grid-cols-1" : "xl:grid-cols-[1fr_340px]"}`}>
+      <div className="flex flex-col gap-7 min-w-0">
+        {/* ============ Now playing ============ */}
+        {track && (
+          <section>
+            <p className="section-eyebrow mb-3">Now Playing</p>
+            <div className="relative overflow-hidden rounded-2xl ring-1 ring-white/10 shadow-xl">
+              <img
+                src={track.coverLarge || track.cover}
+                alt=""
+                className="absolute inset-0 w-full h-full object-cover opacity-25 blur-2xl scale-125"
+              />
+              <div className="absolute inset-0 bg-gradient-to-r from-surface-lowest via-surface-lowest/80 to-surface-lowest/40" />
 
-      {/* Now Playing Card */}
-      {track && (
-        <section>
-          <p className="text-[10px] text-white/35 uppercase tracking-widest mb-2">Now Playing</p>
-          <div className="relative overflow-hidden rounded-xl border border-white/10 shadow-xl">
-            <div className="absolute inset-0">
-              <img src={track.coverLarge || track.cover} alt="" className="w-full h-full object-cover opacity-30 blur-sm scale-110" />
-            </div>
-            <div className="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-transparent" />
-
-            <div className="relative p-4 flex items-center gap-3">
-              <div className="relative w-14 h-14 rounded-xl overflow-hidden shadow-xl border border-white/10 flex-shrink-0">
-                <img className="w-full h-full object-cover" src={track.coverLarge || track.cover} alt={track.title} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <h3 className="text-base font-bold text-white truncate">{track.title}</h3>
-                <p className="text-[11px] text-white/40 truncate">{track.artist}</p>
-                <div className="flex items-center gap-1.5 mt-1">
-                  {qualityBadge(track) && (
-                    <span className={`px-1.5 py-0.5 rounded-sm text-[7px] font-bold uppercase tracking-widest border ${qualityBadge(track)!.cls}`}>
-                      {qualityBadge(track)!.label}
-                    </span>
-                  )}
-                  {track.mood_label && (
-                    <span className="text-[9px] text-blue-400/70">{track.mood_label}</span>
-                  )}
+              <div className={`relative flex items-center gap-4 ${compact ? "p-4" : "p-5"}`}>
+                <img
+                  src={track.coverLarge || track.cover}
+                  alt=""
+                  className={`rounded-xl object-cover shadow-2xl ring-1 ring-white/10 flex-shrink-0 ${
+                    compact ? "w-16 h-16" : "w-20 h-20"
+                  }`}
+                />
+                <div className="flex-1 min-w-0">
+                  <h2 className={`${compact ? "text-[17px]" : "text-headline-md"} font-semibold text-on-surface truncate`}>
+                    {track.title}
+                  </h2>
+                  <p className="text-[13px] text-on-surface-variant truncate mt-0.5">{track.artist}</p>
+                  <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                    {badge && (
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${badge.cls}`}>
+                        {badge.longLabel}
+                      </span>
+                    )}
+                    {track.mood_label && (
+                      <span className="text-[10px] text-primary uppercase tracking-wider font-bold">
+                        {track.mood_label}
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
-              <button
-                onClick={onToggle}
-                className="w-10 h-10 bg-white rounded-full flex items-center justify-center text-black play-btn-glow active:scale-95 flex-shrink-0"
-              >
-                {playing ? <Pause className="w-5 h-5 fill-black" /> : <Play className="w-5 h-5 fill-black ml-0.5" />}
-              </button>
-            </div>
-
-            <div className="relative h-[2px] bg-white/10">
-              <div className="h-full bg-white transition-all duration-200" style={{ width: `${progress}%` }} />
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* Playing Next */}
-      {upNext.length > 0 && (
-        <section>
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-[10px] text-white/35 uppercase tracking-widest">Playing Next</p>
-            <span className="text-[10px] text-white/20">{upNext.length} tracks</span>
-          </div>
-          <div className="flex flex-col gap-0.5">
-            {upNext.slice(0, 10).map((t, i) => {
-              const badge = qualityBadge(t);
-              return (
-                <motion.div
-                  key={t.id}
-                  onClick={() => onPlay(t)}
-                  whileTap={{ scale: 0.98 }}
-                  className="flex items-center gap-3 p-2.5 rounded-lg cursor-pointer active:bg-white/5 transition-colors"
+                <button
+                  type="button"
+                  onClick={onToggle}
+                  aria-label={playing ? "Pause" : "Play"}
+                  className="w-12 h-12 rounded-full bg-white text-black flex items-center justify-center shadow-xl active:scale-95 transition-transform flex-shrink-0"
                 >
-                  <span className="text-[10px] text-white/20 w-4 text-center font-mono">{i + 1}</span>
-                  <div className="relative w-9 h-9 rounded-lg overflow-hidden flex-shrink-0 shadow-md border border-white/5">
-                    <img className="w-full h-full object-cover" src={t.cover} alt={t.title} />
-                  </div>
-                  <div className="flex-grow min-w-0">
-                    <p className="text-sm text-white truncate">{t.title}</p>
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                      {badge && (
-                        <span className={`px-1 py-0.5 rounded-sm text-[6px] font-bold uppercase tracking-widest border ${badge.cls}`}>
-                          {badge.label}
-                        </span>
-                      )}
-                      <p className="text-[11px] text-white/40 truncate">{t.artist}</p>
-                    </div>
-                  </div>
-                  <span className="text-[10px] text-white/20 flex-shrink-0">{fmtDuration(t.duration)}</span>
-                </motion.div>
-              );
-            })}
-          </div>
-        </section>
-      )}
+                  {playing ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current ml-0.5" />}
+                </button>
+              </div>
 
-      {/* AI Suggestions */}
+              <div className="relative h-[3px] bg-white/10">
+                <div className="h-full bg-primary transition-all duration-200" style={{ width: `${progress}%` }} />
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* ============ Up next ============ */}
+        {upNext.length > 0 && (
+          <section>
+            <div className="flex items-center justify-between mb-3">
+              <p className="section-eyebrow">Up Next</p>
+              <div className="flex items-center gap-3">
+                <span className="text-[11px] text-outline">
+                  {upNext.length} track{upNext.length === 1 ? "" : "s"} · {fmtTime(remaining)}
+                </span>
+                <button
+                  type="button"
+                  onClick={queue.clear}
+                  className="text-[11px] text-outline hover:text-danger transition-colors"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+
+            <div className="rounded-xl bg-surface-low p-2 flex flex-col gap-0.5">
+              {upNext.slice(0, 50).map(({ track: t, index }, i) => {
+                const b = qualityBadge(t);
+                return (
+                  <div
+                    key={`${t.id}-${index}`}
+                    draggable
+                    onDragStart={() => setDragging(index)}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setDropTarget(index);
+                    }}
+                    onDragEnd={endDrag}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      endDrag();
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => queue.play(index)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        queue.play(index);
+                      }
+                    }}
+                    className={`group flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors outline-none focus-visible:ring-1 focus-visible:ring-primary-container ${
+                      dragging === index
+                        ? "opacity-40"
+                        : dropTarget === index && dragging !== null
+                          ? "bg-primary-container/20"
+                          : "hover:bg-surface-container"
+                    }`}
+                  >
+                    <GripVertical className="w-4 h-4 text-outline/50 group-hover:text-outline flex-shrink-0 cursor-grab active:cursor-grabbing" />
+                    <span className="text-[11px] text-outline font-mono w-5 text-center flex-shrink-0">{i + 1}</span>
+                    <img src={t.cover} alt="" className="w-10 h-10 rounded object-cover flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[13px] text-on-surface truncate font-medium">{t.title}</p>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        {b && (
+                          <span className={`px-1 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider flex-shrink-0 ${b.cls}`}>
+                            {b.label}
+                          </span>
+                        )}
+                        <span className="text-[11px] text-outline truncate">{t.artist}</span>
+                      </div>
+                    </div>
+                    <span className="text-[11px] text-outline font-mono flex-shrink-0">{fmtTime(t.duration)}</span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        queue.remove(index);
+                      }}
+                      aria-label={`Remove ${t.title} from the queue`}
+                      className="w-7 h-7 rounded-full flex items-center justify-center text-outline opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-danger hover:bg-surface-high transition-all flex-shrink-0"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
+      </div>
+
+      {/* ============ AI suggestions column ============ */}
       {aiSuggestions.length > 0 && (
-        <section>
-          <div className="flex items-center gap-1.5 mb-2">
-            <AudioLines className="w-3.5 h-3.5 text-blue-400" />
-            <p className="text-[10px] text-blue-400 uppercase tracking-widest font-bold">AI Suggests</p>
+        <section className="min-w-0">
+          <div className="flex items-center gap-1.5 mb-3">
+            <Sparkles className="w-3.5 h-3.5 text-primary" />
+            <p className="section-eyebrow !text-primary">AI Suggests</p>
           </div>
-          <div className="flex flex-col gap-0.5">
+
+          <div className="rounded-xl bg-surface-container/60 p-3 flex flex-col gap-1.5">
+            <p className="text-[12px] text-outline leading-relaxed mb-1.5">
+              Ranked against your current mood vector by the reinforcement-learning agent.
+            </p>
             {aiSuggestions.map((t) => {
               const score = aiScores.get(t.id);
               return (
-                <motion.div
+                <button
                   key={t.id}
+                  type="button"
                   onClick={() => onPlay(t)}
-                  whileTap={{ scale: 0.98 }}
-                  className="flex items-center gap-3 p-2.5 rounded-lg cursor-pointer active:bg-blue-500/5 transition-colors border border-transparent"
+                  className="flex items-center gap-2.5 p-2 rounded-lg hover:bg-surface-high transition-colors text-left"
                 >
-                  <div className="relative w-9 h-9 rounded-lg overflow-hidden flex-shrink-0 shadow-md border border-blue-500/20">
-                    <img className="w-full h-full object-cover" src={t.cover} alt={t.title} />
-                  </div>
-                  <div className="flex-grow min-w-0">
-                    <p className="text-sm text-white truncate">{t.title}</p>
-                    <p className="text-[11px] text-white/40 truncate">{t.artist}</p>
+                  <img
+                    src={t.cover}
+                    alt=""
+                    className="w-9 h-9 rounded object-cover flex-shrink-0 ring-1 ring-primary-container/20"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[12px] text-on-surface truncate font-medium">{t.title}</p>
+                    <p className="text-[11px] text-outline truncate">{t.artist}</p>
                   </div>
                   {score !== undefined && (
-                    <span className="text-[9px] text-blue-400 font-bold flex-shrink-0">{Math.round(score * 100)}%</span>
+                    <span className="text-[10px] text-primary font-bold font-mono flex-shrink-0">
+                      {Math.round(score * 100)}%
+                    </span>
                   )}
-                </motion.div>
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      queue.add([t]);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.stopPropagation();
+                        queue.add([t]);
+                      }
+                    }}
+                    aria-label={`Add ${t.title} to the queue`}
+                    className="w-7 h-7 rounded-full flex items-center justify-center text-outline hover:text-on-surface hover:bg-surface-high transition-colors flex-shrink-0"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </span>
+                </button>
               );
             })}
           </div>
-        </section>
-      )}
 
-      {/* Empty state */}
-      {!track && upNext.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-16 opacity-30">
-          <ListMusic className="w-10 h-10 mb-3" />
-          <p className="text-base font-light">Queue is empty</p>
-          <p className="text-[11px] text-white/40 mt-1">Play something to start</p>
-        </div>
+          {!compact && (
+            <div className="mt-3 rounded-xl bg-surface-container/60 p-3.5 flex items-start gap-2.5">
+              <AudioLines className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
+              <p className="text-[11px] text-outline leading-relaxed">
+                Skips, replays and likes all feed back into the agent. The more you listen, the
+                tighter these suggestions track your flow.
+              </p>
+            </div>
+          )}
+        </section>
       )}
     </div>
   );

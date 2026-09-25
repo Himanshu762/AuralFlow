@@ -1,257 +1,418 @@
 "use client";
 
-import React, { useEffect, useRef } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  Play, Pause, SkipForward, SkipBack, Heart,
-  Search, ListMusic, Home as HomeIcon, Library,
-  GripHorizontal, Music2,
-} from "lucide-react";
 import { usePlayerStore, type Track, type TabId } from "../stores/playerStore";
 import { useMonochrome } from "../hooks/useMonochrome";
+import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
+import { useFormFactor } from "../hooks/useFormFactor";
+import { fetchAiStats } from "../lib/api";
 import ShaderBackground from "../components/ShaderBackground";
+import Toolbar from "../components/Toolbar";
+import Sidebar from "../components/Sidebar";
+import TabBar from "../components/TabBar";
+import PlayerBar from "../components/PlayerBar";
+import MiniPlayer from "../components/MiniPlayer";
+import AudioEngineRail from "../components/AudioEngineRail";
 import NowPlayingScreen from "../components/NowPlayingScreen";
 import HomeTab from "../components/HomeTab";
 import SearchTab from "../components/SearchTab";
 import LibraryTab from "../components/LibraryTab";
 import QueueTab from "../components/QueueTab";
+import SettingsTab from "../components/SettingsTab";
+import AlbumScreen from "../components/AlbumScreen";
+import ArtistScreen from "../components/ArtistScreen";
 
-function fmtTime(s: number) {
-  if (!s || !isFinite(s)) return "0:00";
-  const m = Math.floor(s / 60);
-  const sec = Math.floor(s % 60);
-  return `${m}:${sec.toString().padStart(2, "0")}`;
-}
-
-function qualityBadge(track: Track) {
-  if (track.audioQuality === "HI_RES_LOSSLESS")
-    return { label: "Hi-Res", cls: "bg-purple-500/20 text-purple-400 border-purple-500/30" };
-  if (track.audioQuality === "LOSSLESS")
-    return { label: "Lossless", cls: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" };
-  if (track.audioModes?.includes("DOLBY_ATMOS"))
-    return { label: "Atmos", cls: "bg-blue-500/20 text-blue-400 border-blue-500/30" };
-  return null;
-}
+/** Screen titles for the compact layout, which has no toolbar to carry them. */
+const COMPACT_TITLES: Record<TabId, string> = {
+  home: "Listen Now",
+  search: "Search",
+  library: "Library",
+  queue: "Queue",
+  settings: "Audio Lab",
+};
 
 export default function Home() {
   const mono = useMonochrome();
+  const formFactor = useFormFactor();
+  const compact = formFactor === "compact";
 
   const activeTab = usePlayerStore((s) => s.activeTab);
   const setActiveTab = usePlayerStore((s) => s.setActiveTab);
   const track = usePlayerStore((s) => s.track);
-  const playing = usePlayerStore((s) => s.playing);
-  const loading = usePlayerStore((s) => s.loading);
-  const currentTime = usePlayerStore((s) => s.currentTime);
-  const duration = usePlayerStore((s) => s.duration);
-  const monoReady = usePlayerStore((s) => s.monoReady);
   const searchQuery = usePlayerStore((s) => s.searchQuery);
   const searchResults = usePlayerStore((s) => s.searchResults);
   const isExpanded = usePlayerStore((s) => s.isExpanded);
-  const setIsExpanded = usePlayerStore((s) => s.setIsExpanded);
-  const liked = usePlayerStore((s) => s.liked);
-  const toggleLike = usePlayerStore((s) => s.toggleLike);
+  const monoReady = usePlayerStore((s) => s.monoReady);
+  const railOpen = usePlayerStore((s) => s.railOpen);
+  const setRailOpen = usePlayerStore((s) => s.setRailOpen);
+  const setAiStats = usePlayerStore((s) => s.setAiStats);
+  const shaderOn = usePlayerStore((s) => s.settings.shaderBackground);
+  const detail = usePlayerStore((s) => s.detail);
 
-  /* Initial search on ready */
+  /* Pull liked songs and settings out of storage once the client is up.
+     Doing it here rather than at store creation keeps the first render
+     identical to the server's, so hydration stays clean. */
+  useEffect(() => {
+    usePlayerStore.getState().hydrate();
+  }, []);
+
+  /* ---------------- Navigation history (toolbar chevrons) ---------------- */
+
+  const [history, setHistory] = useState<{ stack: TabId[]; idx: number }>({
+    stack: ["home"],
+    idx: 0,
+  });
+
+  /* Set while the chevrons drive the tab, so replaying history does not
+     push a new entry onto it. */
+  const replayingRef = useRef(false);
+
+  useEffect(() => {
+    if (replayingRef.current) {
+      replayingRef.current = false;
+      return;
+    }
+    setHistory((h) => {
+      if (h.stack[h.idx] === activeTab) return h;
+      const stack = [...h.stack.slice(0, h.idx + 1), activeTab];
+      return { stack, idx: stack.length - 1 };
+    });
+  }, [activeTab]);
+
+  const jumpTo = (idx: number) => {
+    replayingRef.current = true;
+    setHistory((h) => ({ ...h, idx }));
+    setActiveTab(history.stack[idx]);
+  };
+
+  /* ---------------- Initial search once the engine is up ---------------- */
+
+  /* Only re-run a search the user actually made. The app used to search a
+     canned term on startup, which filled the home screen with results that
+     looked like a library but were nobody's. */
   const hasSearchedRef = useRef(false);
   useEffect(() => {
-    if (monoReady && !hasSearchedRef.current) {
+    if (monoReady && !hasSearchedRef.current && searchQuery.trim()) {
       hasSearchedRef.current = true;
       mono.search(searchQuery);
     }
   }, [monoReady, searchQuery, mono]);
 
-  /* Progress drag */
-  const progressRef = useRef<HTMLDivElement>(null);
-  const isDraggingRef = useRef(false);
-
-  const handleProgressPointerDown = (e: React.PointerEvent) => {
-    isDraggingRef.current = true;
-    seekFromEvent(e);
-  };
-
-  const seekFromEvent = (e: React.PointerEvent | PointerEvent) => {
-    if (!progressRef.current) return;
-    const rect = progressRef.current.getBoundingClientRect();
-    const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
-    mono.seek((x / rect.width) * duration);
-  };
+  /* ---------------- Poll the RL agent's training status ---------------- */
 
   useEffect(() => {
-    const handleMove = (e: PointerEvent) => {
-      if (isDraggingRef.current) seekFromEvent(e);
+    let cancelled = false;
+    const poll = async () => {
+      const stats = await fetchAiStats();
+      if (!cancelled) setAiStats(stats);
     };
-    const handleUp = () => { isDraggingRef.current = false; };
-    window.addEventListener("pointermove", handleMove);
-    window.addEventListener("pointerup", handleUp);
+    poll();
+    const id = setInterval(poll, 15000);
     return () => {
-      window.removeEventListener("pointermove", handleMove);
-      window.removeEventListener("pointerup", handleUp);
+      cancelled = true;
+      clearInterval(id);
     };
-  }, [duration]);
+  }, [setAiStats]);
 
-  const playTrack = (t: Track) => {
-    mono.play(t.id, searchResults, searchQuery);
-  };
+  /* ---------------- Transport commands from the system tray ---------------- */
 
-  const navItems: { id: TabId; icon: React.ReactNode; label: string }[] = [
-    { id: "home", icon: <HomeIcon className="w-6 h-6" />, label: "Home" },
-    { id: "search", icon: <Search className="w-6 h-6" />, label: "Search" },
-    { id: "library", icon: <Library className="w-6 h-6" />, label: "Library" },
-    { id: "queue", icon: <ListMusic className="w-6 h-6" />, label: "Queue" },
-  ];
+  useEffect(() => {
+    const onTransport = (e: Event) => {
+      const action = (e as CustomEvent<string>).detail;
+      if (action === "toggle") mono.toggle();
+      else if (action === "next") mono.next();
+      else if (action === "prev") mono.prev();
+    };
+    window.addEventListener("auralflow://transport", onTransport);
+    return () => window.removeEventListener("auralflow://transport", onTransport);
+  }, [mono]);
 
-  return (
-    <div className="flex flex-col h-[100dvh] bg-black text-white selection:bg-white/20 relative overflow-hidden">
-      {/* Hidden Monochrome iframe */}
-      <iframe
-        ref={mono.iframeRef}
-        src={mono.iframeSrc}
-        allow="autoplay; encrypted-media; clipboard-read; clipboard-write; display-capture"
-        className="w-[1px] h-[1px] absolute opacity-0 pointer-events-none"
-      />
+  /* ---------------- Push audio settings into the engine ---------------- */
 
-      <ShaderBackground />
+  const streamQuality = usePlayerStore((s) => s.settings.streamQuality);
+  const headTracking = usePlayerStore((s) => s.settings.headTracking);
 
-      {/* Top Bar */}
-      <header className="fixed top-0 left-0 right-0 glass-panel border-b-0 flex justify-between items-center px-5 py-3 w-full z-40 rounded-none bg-black/10">
-        <button className="active:scale-95 transition-transform text-white/80">
-          <GripHorizontal className="w-5 h-5" />
-        </button>
-        <div className="text-lg font-bold tracking-tighter text-white flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.8)]" />
-          AuralFlow
-        </div>
-        <button className="active:scale-95 transition-transform">
-          <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center border-2 border-blue-500/30">
-            <Music2 className="w-4 h-4 text-blue-400" />
-          </div>
-        </button>
-      </header>
+  useEffect(() => {
+    if (!monoReady) return;
+    mono.setQuality(streamQuality);
+  }, [monoReady, streamQuality, mono]);
 
-      {/* Scrollable Content */}
-      <main className="flex-1 overflow-y-auto overflow-x-hidden relative z-10 pt-16 pb-48 px-5">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={activeTab}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.15 }}
-          >
-            {activeTab === "home" && <HomeTab onPlay={playTrack} />}
-            {activeTab === "search" && <SearchTab onSearch={mono.search} onPlay={playTrack} />}
-            {activeTab === "library" && <LibraryTab onPlay={playTrack} />}
-            {activeTab === "queue" && <QueueTab onPlay={playTrack} onToggle={mono.toggle} />}
-          </motion.div>
-        </AnimatePresence>
-      </main>
+  useEffect(() => {
+    if (!monoReady) return;
+    mono.setSpatial(headTracking);
+  }, [monoReady, headTracking, mono]);
 
-      {/* Control Pod */}
-      <AnimatePresence>
-        {track && !isExpanded && (
-          <motion.div
-            initial={{ y: 80, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: 80, opacity: 0 }}
-            className="fixed bottom-24 left-3 right-3 z-50 cursor-pointer"
-            onClick={(e) => {
-              if ((e.target as HTMLElement).closest("button")) return;
-              setIsExpanded(true);
-            }}
-          >
-            <div className="control-pod p-3 relative overflow-hidden">
-              {/* Progress */}
-              <div
-                className="absolute top-0 left-0 right-0 h-[3px] bg-white/10 cursor-pointer"
-                ref={progressRef}
-                onPointerDown={handleProgressPointerDown}
-              >
-                <div
-                  className="h-full bg-white transition-all duration-75"
-                  style={{ width: `${(currentTime / (duration || 1)) * 100}%` }}
-                />
-              </div>
+  const dolbyAtmos = usePlayerStore((s) => s.settings.dolbyAtmos);
 
-              <div className="flex items-center gap-3 mt-0.5">
-                <img
-                  src={track.coverLarge || track.cover}
-                  alt={track.title}
-                  className="w-11 h-11 rounded-xl object-cover shadow-xl"
-                />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <h2 className="text-sm font-bold truncate tracking-tight">{track.title}</h2>
-                    {qualityBadge(track) && (
-                      <span className={`text-[7px] font-bold px-1 py-0.5 rounded border uppercase tracking-wider flex-shrink-0 ${qualityBadge(track)!.cls}`}>
-                        {qualityBadge(track)!.label}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-[11px] text-white/50 truncate">{track.artist}</p>
-                </div>
+  useEffect(() => {
+    if (!monoReady) return;
+    mono.setPreferAtmos(dolbyAtmos);
+  }, [monoReady, dolbyAtmos, mono]);
 
-                <div className="flex items-center gap-1">
-                  <button onClick={mono.prev} className="p-1.5 text-white/70 active:scale-90">
-                    <SkipBack className="w-5 h-5" />
-                  </button>
-                  <button
-                    onClick={mono.toggle}
-                    className="w-10 h-10 bg-white text-black rounded-full flex items-center justify-center active:scale-95 play-btn-glow"
-                  >
-                    {loading ? (
-                      <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" />
-                    ) : playing ? (
-                      <Pause className="w-5 h-5 fill-black" />
-                    ) : (
-                      <Play className="w-5 h-5 fill-black ml-0.5" />
-                    )}
-                  </button>
-                  <button onClick={mono.next} className="p-1.5 text-white/70 active:scale-90">
-                    <SkipForward className="w-5 h-5" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+  /* Transport modes live in the engine; mirror the shell's state onto it. */
+  const repeat = usePlayerStore((s) => s.repeat);
+  const shuffle = usePlayerStore((s) => s.shuffle);
 
-      {/* Bottom Nav */}
-      <nav className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex justify-around items-center h-14 w-[88%] max-w-sm bg-black/60 backdrop-blur-[40px] border-t border-t-blue-500/60 border-b border-b-white/5 border-x border-x-white/5 shadow-[0_-5px_25px_rgba(59,130,246,0.2),0_20px_40px_rgba(0,0,0,0.8)] rounded-full px-3">
-        {navItems.map((item) => {
-          const isActive = activeTab === item.id;
-          return (
-            <button
-              key={item.id}
-              onClick={() => setActiveTab(item.id)}
-              className={`relative flex flex-col items-center justify-center active:scale-95 transition-all duration-300 w-14 h-full ${
-                isActive ? "text-blue-400" : "text-white/50"
-              }`}
-            >
-              {isActive && (
-                <div className="absolute -top-px w-7 h-[3px] bg-blue-500 rounded-b-md shadow-[0_0_12px_rgba(59,130,246,1)]" />
-              )}
-              <div className={isActive ? "drop-shadow-[0_0_6px_rgba(59,130,246,0.8)]" : ""}>
-                {item.icon}
-              </div>
-            </button>
-          );
-        })}
-      </nav>
+  useEffect(() => {
+    if (monoReady) mono.setRepeat(repeat);
+  }, [monoReady, repeat, mono]);
 
-      {/* Full Screen Now Playing */}
-      <AnimatePresence>
-        {track && isExpanded && (
-          <NowPlayingScreen
-            onMinimize={() => setIsExpanded(false)}
-            onPlayPause={mono.toggle}
-            onNext={mono.next}
-            onPrev={mono.prev}
-            onSeek={mono.seek}
-            onVolume={mono.volume}
+  useEffect(() => {
+    if (monoReady) mono.setShuffle(shuffle);
+  }, [monoReady, shuffle, mono]);
+
+  /* The inspector needs real estate; never show it in the compact layout. */
+  useEffect(() => {
+    if (compact) setRailOpen(false);
+    else setRailOpen(window.innerWidth >= 1280);
+  }, [compact, setRailOpen]);
+
+  /* ---------------- Playback plumbing ---------------- */
+
+  const playTrack = useCallback(
+    (t: Track) => {
+      mono.play(t.id, searchResults, searchQuery);
+    },
+    [mono, searchResults, searchQuery]
+  );
+
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  const focusSearch = useCallback(() => {
+    setActiveTab("search");
+    requestAnimationFrame(() => searchInputRef.current?.focus());
+  }, [setActiveTab]);
+
+  const shortcutHandlers = useMemo(
+    () => ({
+      toggle: mono.toggle,
+      next: mono.next,
+      prev: mono.prev,
+      seek: mono.seek,
+      volume: mono.volume,
+      setMuted: mono.setMuted,
+      focusSearch: () => searchInputRef.current?.focus(),
+    }),
+    [mono]
+  );
+  useKeyboardShortcuts(shortcutHandlers);
+
+  /* Pull the real record from the catalogue whenever a detail screen opens.
+     Without this the screens could only show whichever of the album's tracks
+     happened to be in the current search results. */
+  useEffect(() => {
+    if (!monoReady || !detail?.id) return;
+    if (detail.kind === "album") mono.getAlbum(detail.id);
+    else mono.getArtist(detail.id);
+  }, [monoReady, detail, mono]);
+
+  /* Escape pops a pushed detail screen (Now Playing is handled in the hook). */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const s = usePlayerStore.getState();
+      if (e.key === "Escape" && s.detail && !s.isExpanded) {
+        s.closeDetail();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  /* ---------------- Shared pieces ---------------- */
+
+  const detailKey = detail
+    ? detail.kind === "album"
+      ? `album:${detail.album}:${detail.artist}`
+      : `artist:${detail.artist}`
+    : null;
+
+  const content = (
+    <AnimatePresence mode="wait">
+      <motion.div
+        key={detailKey ?? activeTab}
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -8 }}
+        transition={{ duration: 0.14 }}
+      >
+        {detail?.kind === "album" && (
+          <AlbumScreen
+            album={detail.album}
+            artist={detail.artist}
+            cover={detail.cover}
+            onPlay={playTrack}
+            compact={compact}
           />
         )}
-      </AnimatePresence>
+        {detail?.kind === "artist" && (
+          <ArtistScreen
+            artist={detail.artist}
+            cover={detail.cover}
+            onPlay={playTrack}
+            compact={compact}
+          />
+        )}
+        {!detail && (
+          <>
+        {activeTab === "home" && <HomeTab onPlay={playTrack} compact={compact} />}
+        {activeTab === "search" && (
+          <SearchTab onSearch={mono.search} onPlay={playTrack} inputRef={searchInputRef} compact={compact} />
+        )}
+        {activeTab === "library" && (
+          <LibraryTab
+            onPlay={playTrack}
+            compact={compact}
+            onImport={mono.importLibrary}
+            onGetOffline={mono.getOffline}
+            onPlayOffline={mono.playOffline}
+          />
+        )}
+        {activeTab === "queue" && (
+          <QueueTab
+            onPlay={playTrack}
+            onToggle={mono.toggle}
+            compact={compact}
+            queue={{
+              get: mono.getQueue,
+              add: mono.queueAdd,
+              remove: mono.queueRemove,
+              move: mono.queueMove,
+              clear: mono.queueClear,
+              play: mono.queuePlay,
+            }}
+          />
+        )}
+        {activeTab === "settings" && (
+          <SettingsTab
+            onVolume={mono.volume}
+            compact={compact}
+            onPlaybackConfig={mono.setPlaybackConfig}
+            onInstances={mono.instances}
+            eq={{
+              getState: mono.getEqState,
+              setEnabled: mono.setEqEnabled,
+              setGains: mono.setEqGains,
+              setPreamp: mono.setEqPreamp,
+              setAdaptive: mono.setAdaptiveEq,
+              getPresets: mono.getEqPresets,
+              searchHeadphones: mono.searchHeadphones,
+              applyAutoEq: mono.applyAutoEq,
+            }}
+          />
+        )}
+          </>
+        )}
+      </motion.div>
+    </AnimatePresence>
+  );
+
+  const engineFrame = (
+    <iframe
+      ref={mono.iframeRef}
+      src={mono.iframeSrc}
+      title="Monochrome audio engine"
+      allow="autoplay; encrypted-media; clipboard-read; clipboard-write; display-capture"
+      className="w-px h-px absolute opacity-0 pointer-events-none"
+    />
+  );
+
+  const nowPlaying = (
+    <AnimatePresence>
+      {track && isExpanded && (
+        <NowPlayingScreen
+          compact={compact}
+          onFetchLyrics={mono.getLyrics}
+          onDownload={() => mono.download({ scope: "track" })}
+          onMinimize={() => usePlayerStore.getState().setIsExpanded(false)}
+          onPlayPause={mono.toggle}
+          onNext={mono.next}
+          onPrev={mono.prev}
+          onSeek={mono.seek}
+          onVolume={mono.volume}
+        />
+      )}
+    </AnimatePresence>
+  );
+
+  /* ================================================================
+     Compact layout — phones and narrow tablets
+     ================================================================ */
+
+  if (compact) {
+    return (
+      <div className="flex flex-col h-[100dvh] w-full bg-bg-pure text-on-surface overflow-hidden">
+        {engineFrame}
+
+        <div className="relative flex-1 min-h-0 flex flex-col">
+          {shaderOn && <ShaderBackground />}
+          <main className="scroll-area flex-1 safe-top px-5 pt-4 pb-6 relative z-10">
+            {!detail && (
+              <h1 className="text-[30px] font-bold tracking-tight text-on-surface mb-5">
+                {COMPACT_TITLES[activeTab]}
+              </h1>
+            )}
+            {content}
+          </main>
+        </div>
+
+        <AnimatePresence>
+          {track && <MiniPlayer onToggle={mono.toggle} onNext={mono.next} />}
+        </AnimatePresence>
+        <TabBar />
+        {nowPlaying}
+      </div>
+    );
+  }
+
+  /* ================================================================
+     Regular layout — desktop windows
+     ================================================================ */
+
+  return (
+    <div className="flex flex-col h-[100dvh] w-full bg-bg-pure text-on-surface selection:bg-primary-container/40 overflow-hidden">
+      {engineFrame}
+
+      <Toolbar
+        canGoBack={history.idx > 0}
+        canGoForward={history.idx < history.stack.length - 1}
+        onBack={() => history.idx > 0 && jumpTo(history.idx - 1)}
+        onForward={() => history.idx < history.stack.length - 1 && jumpTo(history.idx + 1)}
+        onSearch={focusSearch}
+      />
+
+      <div className="flex flex-1 min-h-0 relative">
+        {shaderOn && <ShaderBackground />}
+
+        <Sidebar />
+
+        <main className="scroll-area flex-1 min-w-0 px-8 py-7 relative z-10">{content}</main>
+
+        <AnimatePresence initial={false}>
+          {railOpen && (
+            <motion.div
+              initial={{ width: 0, opacity: 0 }}
+              animate={{ width: "var(--spacing-rail)", opacity: 1 }}
+              exit={{ width: 0, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 260, damping: 30 }}
+              className="relative z-10 overflow-hidden flex-shrink-0"
+            >
+              <AudioEngineRail onPlay={playTrack} />
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      <PlayerBar
+        onToggle={mono.toggle}
+        onNext={mono.next}
+        onPrev={mono.prev}
+        onSeek={mono.seek}
+        onVolume={mono.volume}
+        onMute={mono.setMuted}
+      />
+
+      {nowPlaying}
     </div>
   );
 }

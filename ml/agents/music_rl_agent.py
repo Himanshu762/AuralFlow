@@ -13,10 +13,16 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
+import os
 from typing import List, Dict, Tuple
 from collections import deque
 import random
 import json
+
+
+# How much of the replay buffer a checkpoint carries. Enough to resume
+# training immediately without writing a huge file every few tracks.
+REPLAY_CHECKPOINT_LIMIT = 2000
 
 
 class MoodPolicyNetwork(nn.Module):
@@ -75,6 +81,10 @@ class MusicRLAgent:
 
         # Experience replay memory
         self.memory = deque(maxlen=memory_size)
+
+        # Number of gradient steps taken across the agent's whole lifetime,
+        # including everything restored from a checkpoint.
+        self.training_steps = 0
 
     def encode_state(
         self,
@@ -158,17 +168,41 @@ class MusicRLAgent:
             return random.randint(0, len(candidate_songs) - 1)
         else:
             # Exploit: choose song with highest Q-value
-            q_values = []
-            with torch.no_grad():
-                for song in candidate_songs:
-                    # Combine state with song mood
-                    song_mood = song.get('mood_vector', [0.5] * 5)
-                    combined = np.concatenate([state, song_mood])
-                    combined_tensor = torch.FloatTensor(combined)
-                    q_value = self.policy_net(combined_tensor)
-                    q_values.append(q_value.item())
-
+            q_values = self.score_batch(
+                state, [s.get('mood_vector', [0.5] * 5) for s in candidate_songs]
+            )
             return int(np.argmax(q_values))
+
+    def score(self, state: np.ndarray, song_mood: List[float]) -> float:
+        """
+        Q-value for playing a song with this mood in this state.
+
+        The network carries dropout, which PyTorch leaves active until the
+        module is put in eval mode. Scoring through this method rather than
+        calling `policy_net` directly is what keeps a score reproducible:
+        otherwise the same track ranks differently on every request and
+        recommendations reshuffle for no reason the listener can see.
+        """
+        return self.score_batch(state, [song_mood])[0]
+
+    def score_batch(
+        self, state: np.ndarray, song_moods: List[List[float]]
+    ) -> List[float]:
+        """Q-values for several songs against one state. See `score`."""
+        if not song_moods:
+            return []
+
+        was_training = self.policy_net.training
+        self.policy_net.eval()
+        try:
+            batch = torch.FloatTensor(
+                np.stack([np.concatenate([state, mood]) for mood in song_moods])
+            )
+            with torch.no_grad():
+                return self.policy_net(batch).squeeze(-1).tolist()
+        finally:
+            if was_training:
+                self.policy_net.train()
 
     def store_experience(
         self,
@@ -256,10 +290,11 @@ class MusicRLAgent:
             else:
                 # Estimate max Q-value for next state
                 # For simplicity, assume continuation with similar mood
-                next_combined = torch.FloatTensor(np.concatenate([next_state, action]))
-                with torch.no_grad():
-                    next_q = self.policy_net(next_combined)
-                target_q = reward + self.gamma * next_q.item()
+                # The bootstrapped target is an estimate, not something we
+                # learn through — take it without dropout so the target is
+                # stable from one step to the next.
+                next_q = self.score(next_state, list(action))
+                target_q = reward + self.gamma * next_q
 
             states.append(combined_tensor)
             targets.append(target_q)
@@ -268,7 +303,8 @@ class MusicRLAgent:
         states_batch = torch.stack(states)
         targets_batch = torch.FloatTensor(targets).unsqueeze(1)
 
-        # Forward pass
+        # Forward pass — dropout belongs here, and only here.
+        self.policy_net.train()
         predictions = self.policy_net(states_batch)
 
         # Compute loss
@@ -281,23 +317,61 @@ class MusicRLAgent:
 
         # Decay epsilon (reduce exploration over time)
         self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
+        self.training_steps += 1
 
         return loss.item()
 
     def save_model(self, path: str):
-        """Save the trained model"""
-        torch.save({
-            'policy_net_state_dict': self.policy_net.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
-            'epsilon': self.epsilon
-        }, path)
+        """
+        Write a checkpoint.
 
-    def load_model(self, path: str):
-        """Load a trained model"""
-        checkpoint = torch.load(path)
-        self.policy_net.load_state_dict(checkpoint['policy_net_state_dict'])
-        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        self.epsilon = checkpoint['epsilon']
+        Saves the policy weights, the optimizer state, the exploration rate and
+        the lifetime step count, plus a bounded slice of the replay buffer so
+        the agent resumes with experience rather than from empty.
+        """
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+
+        # Keep the tail of the buffer; the whole thing can be large and the
+        # most recent experience is the most relevant on resume.
+        recent = list(self.memory)[-REPLAY_CHECKPOINT_LIMIT:]
+
+        tmp = f"{path}.tmp"
+        torch.save(
+            {
+                "version": 1,
+                "policy_net_state_dict": self.policy_net.state_dict(),
+                "optimizer_state_dict": self.optimizer.state_dict(),
+                "epsilon": self.epsilon,
+                "training_steps": self.training_steps,
+                "memory": recent,
+            },
+            tmp,
+        )
+        # Swap into place so a crash mid-write cannot corrupt the checkpoint.
+        os.replace(tmp, path)
+
+    def load_model(self, path: str) -> bool:
+        """
+        Restore a checkpoint. Returns False when there is nothing to load.
+
+        A checkpoint written by an incompatible build is ignored rather than
+        crashing the service — the agent simply starts fresh.
+        """
+        if not os.path.isfile(path):
+            return False
+
+        try:
+            checkpoint = torch.load(path, map_location="cpu", weights_only=False)
+            self.policy_net.load_state_dict(checkpoint["policy_net_state_dict"])
+            self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+            self.epsilon = checkpoint.get("epsilon", self.epsilon)
+            self.training_steps = checkpoint.get("training_steps", 0)
+            for experience in checkpoint.get("memory", []):
+                self.memory.append(experience)
+            return True
+        except Exception as e:  # noqa: BLE001 — a bad checkpoint must not be fatal
+            print(f"[rl_agent] ignoring unreadable checkpoint {path}: {e}")
+            return False
 
 
 # Global instance

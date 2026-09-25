@@ -1,3 +1,11 @@
+"""
+Local identity.
+
+There is no sign-in: a self-hosted AuralFlow serves one listener, created on
+first startup. These endpoints hand back that user and a token for clients
+that want one. The desktop UI does not currently use them.
+"""
+
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
@@ -44,7 +52,8 @@ async def local_login(db: Session = Depends(get_db)):
 async def get_current_user(db: Session = Depends(get_db)):
     """
     Get current user info.
-    TODO: Add proper JWT authentication dependency.
+    Single-user local app: there is one listener and no login flow. This
+    returns that user so clients have an id and token to work with.
     """
     default_email = "local@auralflow.local"
     user = db.query(User).filter(User.email == default_email).first()

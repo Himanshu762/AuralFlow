@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = { darkMode: "class", theme: { extend: { colors: { "on-secondary-fixed": "#1b1b1d", "surface-container": "#1e1f23", "lossless": "#10b981", "inverse-primary": "#005db8", "primary-fixed-dim": "#aac7ff", "on-tertiary-fixed": "#341100", "tertiary": "#ffb691", "on-tertiary-container": "#4a1b00", "on-primary-fixed": "#001b3e", "surface-dim": "#121317", "on-primary-fixed-variant": "#00468d", "success": "#32d74b", "tertiary-fixed": "#ffdbcb", "glass-surface": "rgba(28, 28, 30, 0.7)", "surface-bright": "#38393d", "on-secondary-fixed-variant": "#474649", "on-primary": "#003064", "surface-container-low": "#1a1b1f", "surface-variant": "#343539", "background": "#121317", "inverse-surface": "#e3e2e7", "primary": "#aac7ff", "outline": "#8b91a0", "on-surface": "#e3e2e7", "inverse-on-surface": "#2f3034", "on-tertiary": "#552000", "surface-container-high": "#292a2e", "on-error-container": "#ffdad6", "dolby-atmos": "#3b82f6", "on-background": "#e3e2e7", "tertiary-container": "#eb6a12", "outline-variant": "#414754", "surface-tint": "#aac7ff", "on-secondary": "#303032", "secondary-fixed": "#e4e2e4", "secondary-container": "#474649", "on-tertiary-fixed-variant": "#793100", "on-error": "#690005", "surface-container-lowest": "#0d0e12", "surface": "#121317", "error": "#ffb4ab", "danger": "#ff453a", "border-subtle": "#38383a", "surface-container-highest": "#343539", "on-secondary-container": "#b6b4b7", "on-primary-container": "#002957", "error-container": "#93000a", "background-pure": "#000000", "secondary": "#c8c6c8", "secondary-fixed-dim": "#c8c6c8", "on-surface-variant": "#c0c6d6", "primary-container": "#3e90ff", "hi-res": "#a855f7", "primary-fixed": "#d6e3ff", "tertiary-fixed-dim": "#ffb691" }, borderRadius: { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" }, spacing: { "margin-mobile": "20px", "stack-md": "16px", "gutter": "16px", "stack-sm": "8px", "margin-desktop": "40px", "unit": "4px", "stack-lg": "32px" }, fontFamily: { "headline-xl": ["Inter"], "headline-lg": ["Inter"], "headline-md": ["Inter"], "label-md": ["Inter"], "label-sm": ["Inter"], "headline-lg-mobile": ["Inter"], "body-md": ["Inter"], "body-lg": ["Inter"] }, fontSize: { "headline-xl": ["48px", { lineHeight: "1.1", letterSpacing: "-0.04em", fontWeight: "700" }], "headline-lg": ["32px", { lineHeight: "1.2", letterSpacing: "-0.02em", fontWeight: "600" }], "headline-md": ["24px", { lineHeight: "1.3", letterSpacing: "-0.02em", fontWeight: "600" }], "label-md": ["13px", { lineHeight: "1.0", letterSpacing: "0.02em", fontWeight: "600" }], "label-sm": ["11px", { lineHeight: "1.0", letterSpacing: "0.05em", fontWeight: "700" }], "headline-lg-mobile": ["28px", { lineHeight: "1.2", letterSpacing: "-0.02em", fontWeight: "600" }], "body-md": ["15px", { lineHeight: "1.5", letterSpacing: "-0.01em", fontWeight: "400" }], "body-lg": ["17px", { lineHeight: "1.5", letterSpacing: "-0.01em", fontWeight: "400" }] } } } };</script><style>@layer base{html,body{width:100vw;margin:0;padding:0;background-color:#000000;color:#e3e2e7;}body{overscroll-behavior:none;-webkit-tap-highlight-color:transparent;}.pb-safe{padding-bottom:env(safe-area-inset-bottom,20px);}.pt-safe{padding-top:env(safe-area-inset-top,47px);}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head><body class="bg-background-pure font-body-md text-body-md text-on-surface flex flex-col antialiased selection:bg-primary-container selection:text-white"><header class="fixed top-0 w-full z-50 bg-background-pure/80 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="pt-safe"><div class="h-11 px-6 flex items-center justify-between text-on-surface select-none"><span class="text-[15px] font-semibold tracking-tight">9:41</span><div class="w-28 h-7 bg-surface-container-lowest rounded-full flex items-center justify-between px-2.5 shadow-inner"><div class="w-2.5 h-2.5 rounded-full bg-lossless/80"></div><div class="w-3 h-3 rounded-full bg-surface-container-high"></div></div><div class="flex items-center gap-1.5"><span class="material-symbols-outlined text-[16px]">signal_cellular_alt</span><span class="material-symbols-outlined text-[16px]">wifi</span><div class="w-5 h-2.5 rounded-[3px] border border-on-surface/80 p-0.5 flex items-center"><div class="h-full w-full bg-on-surface rounded-[1px]"></div></div></div></div><div class="h-14 px-margin-mobile flex items-center justify-between"><div class="flex items-center gap-2"><button class="w-11 h-11 rounded-full bg-surface-container/60 backdrop-blur-md flex items-center justify-center text-primary active:scale-95 transition-transform duration-150" onclick="history.back()"><span class="material-symbols-outlined text-[22px]">arrow_back_ios_new</span></button><h1 class="font-headline-md text-headline-md tracking-tight text-on-surface truncate max-w-[220px]">Now Playing Expanded</h1></div><div class="flex items-center gap-2"><button class="w-11 h-11 rounded-full bg-surface-container/60 backdrop-blur-md flex items-center justify-center text-on-surface active:scale-95 transition-transform duration-150"><span class="material-symbols-outlined text-[20px]">more_horiz</span></button><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></div></header><main class="flex flex-col relative w-full pt-[107px] pb-12 bg-background-pure min-h-screen"><div class="flex flex-col w-full relative select-none">
+<!-- Dynamic Audio Ambient Glow Aura -->
+<div class="absolute -top-12 left-1/2 -translate-x-1/2 w-80 h-80 rounded-full bg-primary-container/20 blur-[110px] pointer-events-none"></div>
+<div class="absolute top-44 left-1/3 -translate-x-1/2 w-64 h-64 rounded-full bg-hi-res/20 blur-[120px] pointer-events-none"></div>
+<!-- Native Modal Sheet Drag Handle -->
+<div class="flex justify-center pt-1 pb-3">
+<div class="w-10 h-1 rounded-full bg-outline-variant/60 active:bg-outline transition-colors duration-200"></div>
+</div>
+<!-- Contextual Modal Navigation Header -->
+<div class="flex items-center justify-between px-margin-mobile h-12 w-full">
+<!-- Minimize Sheet Button -->
+<button aria-label="Dismiss Player" class="w-10 h-10 rounded-full bg-surface-container-high/60 backdrop-blur-md flex items-center justify-center text-on-surface active:scale-90 transition-transform duration-150">
+<span class="material-symbols-outlined text-[24px]">keyboard_arrow_down</span>
+</button>
+<!-- Center Output / AirPlay Island Pill -->
+<button class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-container-high/70 backdrop-blur-xl text-primary active:scale-95 transition-transform duration-150 shadow-sm" id="airplaySheetTrigger">
+<span class="material-symbols-outlined text-[15px] animate-pulse">airplay</span>
+<span class="font-label-sm text-label-sm tracking-wide uppercase text-on-surface">Living Room Max</span>
+</button>
+<!-- Track Options Menu Trigger -->
+<button aria-label="Track options" class="w-10 h-10 rounded-full bg-surface-container-high/60 backdrop-blur-md flex items-center justify-center text-on-surface active:scale-90 transition-transform duration-150">
+<span class="material-symbols-outlined text-[20px]">more_horiz</span>
+</button>
+</div>
+<!-- Album Artwork Section (Hero Tactile Card) -->
+<div class="px-margin-mobile pt-3 pb-4 flex justify-center w-full">
+<div class="relative w-full max-w-[340px] aspect-square group">
+<!-- Reactive Artwork Cast Shadow -->
+<div class="absolute inset-4 rounded-[28px] bg-primary-container/30 blur-2xl -z-10 transform scale-95 opacity-80"></div>
+<!-- Artwork Surface Layer -->
+<div class="w-full h-full rounded-[28px] overflow-hidden bg-surface-container-lowest shadow-2xl relative transition-transform duration-300 active:scale-[0.98]" id="artworkContainer">
+<img class="w-full h-full object-cover select-none pointer-events-none" data-alt="Modern cyberpunk and synthwave inspired 3D abstract fluid sphere pulsating with deep obsidian, neon violet, electric cyan, and dark liquid chrome textures. High dynamic range, hyper-detailed subsurface scattering, moody ambient cinematic lighting, dark background, ultra-fidelity album art." src="https://lh3.googleusercontent.com/aida-public/AB6AXuB5LN6QRmjyzWm2O4kKJbNdtpVnmX1xGETziB2jt9nJV75Pi5V3-98BJ5Vf3YSrEes73-jPlULsYJKYg09E83eNqjCXM2i9wSjL86eh5c9ygJD94qU-Q7nICz-VwoARd9UdYWseYZpl6mUQLW267rW0flhMkIrJViv3CdYAu0eL-RnBlxZcJYbixoXXee23Pgw87oqeTwUlloA5AkXcZ2Tkv8ZyJ53DeynELixFMrrQuBOFUIhYtqLusg"/>
+<!-- Vinyl Grooves Tactile Glass Sheen -->
+<div class="absolute inset-0 bg-gradient-to-tr from-transparent via-white/10 to-transparent pointer-events-none"></div>
+</div>
+</div>
+</div>
+<!-- Song Metadata & Favorite Section -->
+<div class="px-margin-mobile pt-1 flex items-center justify-between w-full">
+<div class="flex flex-col min-w-0 pr-4">
+<div class="flex items-center gap-2">
+<h2 class="font-headline-lg-mobile text-headline-lg-mobile text-on-surface tracking-tight truncate font-bold">Midnight Resonance</h2>
+</div>
+<p class="font-body-lg text-body-lg text-on-surface-variant truncate">Aura Synthetica • Continuum (Deluxe)</p>
+</div>
+<!-- Tactile Haptic Favorite Heart Button -->
+<button class="w-11 h-11 flex-shrink-0 rounded-full bg-surface-container/60 backdrop-blur-md flex items-center justify-center text-outline active:scale-80 transition-all duration-200" id="favoriteBtn">
+<span class="material-symbols-outlined text-[24px]">favorite</span>
+</button>
+</div>
+<!-- Audiophile Audio Fidelity Pill (Lossless / Dolby Atmos) -->
+<div class="px-margin-mobile pt-2.5 pb-2 flex items-center gap-2">
+<button class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-lossless/10 text-lossless active:scale-95 transition-transform duration-150" id="codecModalBtn">
+<span class="material-symbols-outlined text-[14px]">graphic_eq</span>
+<span class="font-label-sm text-label-sm uppercase tracking-wider">Hi-Res Lossless</span>
+<span class="text-lossless/70 font-label-sm text-[9px]">• 24-bit/192kHz ALAC</span>
+</button>
+<div class="flex items-center gap-1 px-2 py-1 rounded-full bg-dolby-atmos/10 text-dolby-atmos">
+<span class="material-symbols-outlined text-[13px]">spatial_audio_off</span>
+<span class="font-label-sm text-label-sm uppercase tracking-wider">Atmos</span>
+</div>
+</div>
+<!-- Live Animated Waveform Scrubber -->
+<div class="px-margin-mobile pt-2 flex flex-col gap-1.5 w-full">
+<div class="relative w-full h-8 flex items-center cursor-pointer group" id="scrubberTrack">
+<!-- Mini Waveform Canvas Simulation Bars -->
+<div class="absolute inset-x-0 h-4 flex items-center justify-between gap-[2px] opacity-40 group-hover:opacity-75 transition-opacity pointer-events-none">
+<div class="w-[3px] h-2 rounded-full bg-primary"></div>
+<div class="w-[3px] h-3 rounded-full bg-primary"></div>
+<div class="w-[3px] h-4 rounded-full bg-primary"></div>
+<div class="w-[3px] h-2 rounded-full bg-primary"></div>
+<div class="w-[3px] h-3 rounded-full bg-primary"></div>
+<div class="w-[3px] h-4 rounded-full bg-primary"></div>
+<div class="w-[3px] h-1.5 rounded-full bg-primary"></div>
+<div class="w-[3px] h-3 rounded-full bg-primary"></div>
+<div class="w-[3px] h-4 rounded-full bg-primary"></div>
+<div class="w-[3px] h-2 rounded-full bg-primary"></div>
+<div class="w-[3px] h-3 rounded-full bg-primary"></div>
+<div class="w-[3px] h-4 rounded-full bg-primary"></div>
+<div class="w-[3px] h-1.5 rounded-full bg-primary"></div>
+<div class="w-[3px] h-3 rounded-full bg-primary"></div>
+<div class="w-[3px] h-4 rounded-full bg-primary"></div>
+<div class="w-[3px] h-2 rounded-full bg-primary"></div>
+<div class="w-[3px] h-3 rounded-full bg-surface-bright"></div>
+<div class="w-[3px] h-2 rounded-full bg-surface-bright"></div>
+<div class="w-[3px] h-4 rounded-full bg-surface-bright"></div>
+<div class="w-[3px] h-1.5 rounded-full bg-surface-bright"></div>
+<div class="w-[3px] h-3 rounded-full bg-surface-bright"></div>
+<div class="w-[3px] h-2 rounded-full bg-surface-bright"></div>
+<div class="w-[3px] h-3.5 rounded-full bg-surface-bright"></div>
+<div class="w-[3px] h-1 rounded-full bg-surface-bright"></div>
+</div>
+<!-- Linear Background Track -->
+<div class="w-full h-1 bg-surface-bright rounded-full overflow-hidden relative pointer-events-none">
+<!-- Elapsed Buffered Track -->
+<div class="h-full bg-on-surface rounded-full transition-all duration-100" id="progressFill" style="width: 64%;"></div>
+</div>
+<!-- Scrubber Pin / Thumb with tactile ring -->
+<div class="absolute w-3.5 h-3.5 rounded-full bg-on-surface shadow-md -translate-x-1/2 left-[64%] group-hover:scale-125 group-active:scale-150 transition-transform" id="scrubberThumb"></div>
+</div>
+<!-- Elapsed / Remaining Timers -->
+<div class="flex items-center justify-between text-outline font-label-sm text-label-sm">
+<span id="elapsedTime">2:45</span>
+<span id="remainingTime">-1:32</span>
+</div>
+</div>
+<!-- Primary Tactile Hi-Fi Playback Controls -->
+<div class="px-margin-mobile pt-3 pb-2 flex items-center justify-between w-full max-w-[380px] mx-auto">
+<!-- Shuffle Toggle -->
+<button aria-label="Shuffle" class="w-10 h-10 rounded-full flex items-center justify-center text-outline active:scale-90 transition-transform" id="shuffleBtn">
+<span class="material-symbols-outlined text-[20px]">shuffle</span>
+</button>
+<!-- Previous Track Button -->
+<button aria-label="Previous Track" class="w-12 h-12 rounded-full flex items-center justify-center text-on-surface active:scale-85 transition-transform">
+<span class="material-symbols-outlined text-[34px]" style="font-variation-settings: 'FILL' 1;">skip_previous</span>
+</button>
+<!-- Massive Frosted Glass Play/Pause Button -->
+<button aria-label="Play or Pause" class="relative w-20 h-20 rounded-full bg-on-surface text-on-primary-fixed flex items-center justify-center shadow-xl active:scale-90 transition-all duration-150" id="playPauseBtn">
+<div class="absolute inset-0 rounded-full bg-gradient-to-b from-white/25 to-transparent pointer-events-none"></div>
+<span class="material-symbols-outlined text-[40px]" id="playIcon" style="font-variation-settings: 'FILL' 1;">pause</span>
+</button>
+<!-- Next Track Button -->
+<button aria-label="Next Track" class="w-12 h-12 rounded-full flex items-center justify-center text-on-surface active:scale-85 transition-transform">
+<span class="material-symbols-outlined text-[34px]" style="font-variation-settings: 'FILL' 1;">skip_next</span>
+</button>
+<!-- Repeat Toggle -->
+<button aria-label="Repeat One" class="w-10 h-10 rounded-full flex items-center justify-center text-primary active:scale-90 transition-transform" id="repeatBtn">
+<span class="material-symbols-outlined text-[20px]">repeat_one</span>
+</button>
+</div>
+<!-- Native iOS Fluid Volume Scrubbing Slider -->
+<div class="px-margin-mobile pt-2 pb-3 w-full max-w-[360px] mx-auto flex items-center gap-3">
+<span class="material-symbols-outlined text-outline text-[18px]">volume_down</span>
+<div class="relative flex-1 h-7 flex items-center cursor-pointer group" id="volumeSliderTrack">
+<div class="w-full h-1.5 bg-surface-container-high rounded-full overflow-hidden relative pointer-events-none">
+<div class="h-full bg-on-surface-variant group-hover:bg-on-surface transition-colors rounded-full" id="volumeFill" style="width: 72%;"></div>
+</div>
+<div class="absolute w-4 h-4 rounded-full bg-on-surface shadow-md -translate-x-1/2 left-[72%] opacity-0 group-hover:opacity-100 transition-opacity" id="volumeThumb"></div>
+</div>
+<span class="material-symbols-outlined text-outline text-[18px]">volume_up</span>
+</div>
+<!-- Bottom Secondary Sheet Action Controls -->
+<div class="px-margin-mobile pt-1 pb-4 flex items-center justify-around w-full max-w-[320px] mx-auto text-on-surface-variant">
+<!-- Synced Lyrics Quick Trigger Pill -->
+<button class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-container/60 backdrop-blur-md active:scale-95 transition-transform" id="lyricsBtn">
+<span class="material-symbols-outlined text-[18px] text-primary">chat_bubble</span>
+<span class="font-label-sm text-label-sm text-on-surface">Lyrics</span>
+</button>
+<!-- AirPlay / Speaker Direct Trigger -->
+<button aria-label="Output Routing" class="w-10 h-10 rounded-full bg-surface-container/60 backdrop-blur-md flex items-center justify-center text-on-surface active:scale-90 transition-transform" id="routeBtn">
+<span class="material-symbols-outlined text-[20px]">speaker_group</span>
+</button>
+<!-- Next Up / Play Queue Drawer Trigger -->
+<button aria-label="Up Next Queue" class="w-10 h-10 rounded-full bg-surface-container/60 backdrop-blur-md flex items-center justify-center text-on-surface active:scale-90 transition-transform" id="queueBtn">
+<span class="material-symbols-outlined text-[20px]">queue_music</span>
+</button>
+</div>
+<!-- Codec Audiophile Details Sheet Drawer (Hidden Overlay Container) -->
+<div class="fixed inset-x-0 bottom-0 z-50 transform translate-y-full transition-transform duration-300 ease-out bg-surface-container-high/95 backdrop-blur-2xl rounded-t-[32px] p-6 shadow-2xl" id="codecBottomSheet">
+<div class="w-10 h-1 rounded-full bg-outline-variant/60 mx-auto mb-4"></div>
+<div class="flex items-center justify-between mb-4">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-lossless text-[24px]">verified</span>
+<h3 class="font-headline-md text-headline-md text-on-surface">Audio Quality</h3>
+</div>
+<button class="w-8 h-8 rounded-full bg-surface-container flex items-center justify-center text-outline" id="closeCodecSheet">
+<span class="material-symbols-outlined text-[18px]">close</span>
+</button>
+</div>
+<div class="space-y-3 font-body-md text-body-md text-on-surface-variant">
+<div class="p-3.5 rounded-xl bg-surface-container/80 flex items-center justify-between">
+<div class="flex flex-col">
+<span class="font-label-md text-label-md text-on-surface font-semibold">ALAC (Apple Lossless Audio Codec)</span>
+<span class="font-label-sm text-label-sm text-outline">24-bit / 192 kHz Hi-Res Lossless</span>
+</div>
+<span class="font-label-sm text-label-sm px-2 py-1 rounded bg-lossless/20 text-lossless font-bold">Bit-Perfect</span>
+</div>
+<div class="p-3.5 rounded-xl bg-surface-container/80 flex items-center justify-between">
+<div class="flex flex-col">
+<span class="font-label-md text-label-md text-on-surface font-semibold">Spatial Audio</span>
+<span class="font-label-sm text-label-sm text-outline">Dolby Atmos binaural rendering enabled</span>
+</div>
+<span class="material-symbols-outlined text-dolby-atmos text-[20px]">check_circle</span>
+</div>
+<div class="p-3.5 rounded-xl bg-surface-container/80 flex items-center justify-between">
+<div class="flex flex-col">
+<span class="font-label-md text-label-md text-on-surface font-semibold">Audio Hardware Route</span>
+<span class="font-label-sm text-label-sm text-outline">AirPods Max • Apple H1 DAC bypass</span>
+</div>
+<span class="material-symbols-outlined text-primary text-[20px]">headphones</span>
+</div>
+</div>
+<div class="mt-6 flex justify-center">
+<button class="w-full py-3.5 rounded-full bg-on-surface text-on-primary-fixed font-label-md text-label-md font-bold tracking-wide active:scale-[0.98] transition-transform" id="doneCodecBtn">
+        Done
+      </button>
+</div>
+</div>
+</div>
+<script>
+  (function() {
+    // Interactive Play/Pause State
+    const playPauseBtn = document.getElementById('playPauseBtn');
+    const playIcon = document.getElementById('playIcon');
+    const artworkContainer = document.getElementById('artworkContainer');
+    let isPlaying = true;
+
+    if (playPauseBtn && playIcon) {
+      playPauseBtn.addEventListener('click', () => {
+        isPlaying = !isPlaying;
+        playIcon.textContent = isPlaying ? 'pause' : 'play_arrow';
+        if (!isPlaying) {
+          artworkContainer.classList.add('scale-95');
+          artworkContainer.classList.add('opacity-90');
+        } else {
+          artworkContainer.classList.remove('scale-95');
+          artworkContainer.classList.remove('opacity-90');
+        }
+      });
+    }
+
+    // Favorite / Love Haptic Micro-Interaction
+    const favoriteBtn = document.getElementById('favoriteBtn');
+    let isFavorite = false;
+    if (favoriteBtn) {
+      favoriteBtn.addEventListener('click', () => {
+        isFavorite = !isFavorite;
+        const icon = favoriteBtn.querySelector('span');
+        if (isFavorite) {
+          icon.style.fontVariationSettings = "'FILL' 1";
+          favoriteBtn.classList.remove('text-outline');
+          favoriteBtn.classList.add('text-danger', 'bg-danger/10');
+        } else {
+          icon.style.fontVariationSettings = "'FILL' 0";
+          favoriteBtn.classList.add('text-outline');
+          favoriteBtn.classList.remove('text-danger', 'bg-danger/10');
+        }
+      });
+    }
+
+    // Shuffle Toggle Micro-Interaction
+    const shuffleBtn = document.getElementById('shuffleBtn');
+    let isShuffle = false;
+    if (shuffleBtn) {
+      shuffleBtn.addEventListener('click', () => {
+        isShuffle = !isShuffle;
+        shuffleBtn.classList.toggle('text-primary', isShuffle);
+        shuffleBtn.classList.toggle('text-outline', !isShuffle);
+      });
+    }
+
+    // Codec Bottom Sheet Drawer Interactions
+    const codecModalBtn = document.getElementById('codecModalBtn');
+    const codecBottomSheet = document.getElementById('codecBottomSheet');
+    const closeCodecSheet = document.getElementById('closeCodecSheet');
+    const doneCodecBtn = document.getElementById('doneCodecBtn');
+
+    const openCodecModal = () => {
+      if (codecBottomSheet) codecBottomSheet.classList.remove('translate-y-full');
+    };
+    const hideCodecModal = () => {
+      if (codecBottomSheet) codecBottomSheet.classList.add('translate-y-full');
+    };
+
+    if (codecModalBtn) codecModalBtn.addEventListener('click', openCodecModal);
+    if (closeCodecSheet) closeCodecSheet.addEventListener('click', hideCodecModal);
+    if (doneCodecBtn) doneCodecBtn.addEventListener('click', hideCodecModal);
+
+    // Dynamic Scrubber Track Interaction
+    const scrubberTrack = document.getElementById('scrubberTrack');
+    const progressFill = document.getElementById('progressFill');
+    const scrubberThumb = document.getElementById('scrubberThumb');
+    const elapsedTime = document.getElementById('elapsedTime');
+
+    if (scrubberTrack && progressFill && scrubberThumb) {
+      const updateScrubber = (clientX) => {
+        const rect = scrubberTrack.getBoundingClientRect();
+        let pct = (clientX - rect.left) / rect.width;
+        pct = Math.max(0, Math.min(1, pct));
+        const pctString = (pct * 100).toFixed(1) + '%';
+        progressFill.style.width = pctString;
+        scrubberThumb.style.left = pctString;
+        
+        const totalSeconds = 257; // 4:17
+        const currentSeconds = Math.floor(pct * totalSeconds);
+        const mins = Math.floor(currentSeconds / 60);
+        const secs = currentSeconds % 60;
+        if (elapsedTime) {
+          elapsedTime.textContent = mins + ':' + (secs < 10 ? '0' : '') + secs;
+        }
+      };
+
+      let isScrubbing = false;
+      scrubberTrack.addEventListener('pointerdown', (e) => {
+        isScrubbing = true;
+        scrubberTrack.setPointerCapture(e.pointerId);
+        updateScrubber(e.clientX);
+      });
+
+      scrubberTrack.addEventListener('pointermove', (e) => {
+        if (isScrubbing) updateScrubber(e.clientX);
+      });
+
+      scrubberTrack.addEventListener('pointerup', (e) => {
+        isScrubbing = false;
+      });
+    }
+
+    // Volume Track Interaction
+    const volumeSliderTrack = document.getElementById('volumeSliderTrack');
+    const volumeFill = document.getElementById('volumeFill');
+    const volumeThumb = document.getElementById('volumeThumb');
+
+    if (volumeSliderTrack && volumeFill && volumeThumb) {
+      const updateVolume = (clientX) => {
+        const rect = volumeSliderTrack.getBoundingClientRect();
+        let pct = (clientX - rect.left) / rect.width;
+        pct = Math.max(0, Math.min(1, pct));
+        const pctString = (pct * 100).toFixed(1) + '%';
+        volumeFill.style.width = pctString;
+        volumeThumb.style.left = pctString;
+      };
+
+      let isVolDragging = false;
+      volumeSliderTrack.addEventListener('pointerdown', (e) => {
+        isVolDragging = true;
+        volumeSliderTrack.setPointerCapture(e.pointerId);
+        updateVolume(e.clientX);
+      });
+
+      volumeSliderTrack.addEventListener('pointermove', (e) => {
+        if (isVolDragging) updateVolume(e.clientX);
+      });
+
+      volumeSliderTrack.addEventListener('pointerup', (e) => {
+        isVolDragging = false;
+      });
+    }
+  })();
+</script></main><div class="fixed bottom-0 w-full z-50 pointer-events-none pb-safe"><div class="flex justify-center pb-1 pt-2"><div class="w-[134px] h-[5px] rounded-full bg-white/40"></div></div></div></body></html>

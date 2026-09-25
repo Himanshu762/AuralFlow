@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Aura Synthetica - Artist Profile</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "dolby-atmos": "#3b82f6",
+                        "tertiary-fixed-dim": "#ffb691",
+                        "danger": "#ff453a",
+                        "on-error-container": "#ffdad6",
+                        "on-surface-variant": "#c0c6d6",
+                        "tertiary-container": "#eb6a12",
+                        "secondary": "#c8c6c8",
+                        "on-surface": "#e3e2e7",
+                        "surface-container-highest": "#343539",
+                        "outline": "#8b91a0",
+                        "on-secondary-container": "#b6b4b7",
+                        "inverse-on-surface": "#2f3034",
+                        "on-primary-fixed-variant": "#00468d",
+                        "on-primary-fixed": "#001b3e",
+                        "on-secondary-fixed-variant": "#474649",
+                        "on-background": "#e3e2e7",
+                        "tertiary-fixed": "#ffdbcb",
+                        "primary-fixed": "#d6e3ff",
+                        "background": "#121317",
+                        "primary-container": "#3e90ff",
+                        "surface-container-high": "#292a2e",
+                        "surface-container-low": "#1a1b1f",
+                        "secondary-fixed-dim": "#c8c6c8",
+                        "success": "#32d74b",
+                        "on-primary-container": "#002957",
+                        "primary-fixed-dim": "#aac7ff",
+                        "secondary-fixed": "#e4e2e4",
+                        "surface": "#121317",
+                        "inverse-primary": "#005db8",
+                        "on-secondary-fixed": "#1b1b1d",
+                        "surface-dim": "#121317",
+                        "on-primary": "#003064",
+                        "on-tertiary": "#552000",
+                        "surface-variant": "#343539",
+                        "border-subtle": "#38383a",
+                        "on-tertiary-container": "#4a1b00",
+                        "background-pure": "#000000",
+                        "surface-container": "#1e1f23",
+                        "tertiary": "#ffb691",
+                        "surface-tint": "#aac7ff",
+                        "on-tertiary-fixed-variant": "#793100",
+                        "primary": "#aac7ff",
+                        "error-container": "#93000a",
+                        "glass-surface": "rgba(28, 28, 30, 0.7)",
+                        "error": "#ffb4ab",
+                        "on-error": "#690005",
+                        "surface-bright": "#38393d",
+                        "surface-container-lowest": "#0d0e12",
+                        "secondary-container": "#474649",
+                        "on-tertiary-fixed": "#341100",
+                        "inverse-surface": "#e3e2e7",
+                        "lossless": "#10b981",
+                        "on-secondary": "#303032",
+                        "hi-res": "#a855f7",
+                        "outline-variant": "#414754"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "gutter": "16px",
+                        "stack-md": "16px",
+                        "unit": "4px",
+                        "margin-desktop": "40px",
+                        "margin-mobile": "20px",
+                        "stack-lg": "32px",
+                        "stack-sm": "8px"
+                    },
+                    "fontFamily": {
+                        "label-md": ["Inter"],
+                        "headline-xl": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "body-md": ["Inter"],
+                        "headline-lg": ["Inter"],
+                        "label-sm": ["Inter"],
+                        "headline-lg-mobile": ["Inter"],
+                        "body-lg": ["Inter"]
+                    },
+                    "fontSize": {
+                        "label-md": ["13px", { "lineHeight": "1.0", "letterSpacing": "0.02em", "fontWeight": "600" }],
+                        "headline-xl": ["48px", { "lineHeight": "1.1", "letterSpacing": "-0.04em", "fontWeight": "700" }],
+                        "headline-md": ["24px", { "lineHeight": "1.3", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "body-md": ["15px", { "lineHeight": "1.5", "letterSpacing": "-0.01em", "fontWeight": "400" }],
+                        "headline-lg": ["32px", { "lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "label-sm": ["11px", { "lineHeight": "1.0", "letterSpacing": "0.05em", "fontWeight": "700" }],
+                        "headline-lg-mobile": ["28px", { "lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "body-lg": ["17px", { "lineHeight": "1.5", "letterSpacing": "-0.01em", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body {
+            background-color: #000000; /* Level 0 Base */
+            color: theme('colors.on-surface');
+            overflow-x: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+        
+        /* Glassmorphism utilities */
+        .glass-panel {
+            background: rgba(28, 28, 30, 0.4);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .glass-bar {
+            background: rgba(28, 28, 30, 0.7);
+            backdrop-filter: blur(40px);
+            -webkit-backdrop-filter: blur(40px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .text-glow {
+            text-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+        }
+
+        .hero-gradient {
+            background: linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0.8) 70%, rgba(0,0,0,1) 100%);
+        }
+
+        /* Spring physics feel */
+        .spring-transition {
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.1); /* Damping simulation */
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+</head>
+<body class="relative min-h-screen">
+<!-- Background Shader -->
+<div class="fixed inset-0 z-0 pointer-events-none opacity-50">
+
+</div>
+<!-- Massive Background Text -->
+<div class="fixed top-20 left-0 w-full z-0 overflow-hidden pointer-events-none flex justify-center opacity-[0.03]">
+<h1 class="font-headline-xl text-[15vw] leading-none whitespace-nowrap tracking-tighter text-on-surface">AURA SYNTHETICA</h1>
+</div>
+<!-- Top Navigation -->
+<header class="fixed top-0 w-full flex justify-between items-center px-margin-mobile md:px-margin-desktop py-4 z-50 bg-transparent flat no shadows transition-opacity">
+<div class="flex items-center gap-4">
+<div class="w-10 h-10 rounded-full overflow-hidden border border-border-subtle active:scale-95 transition-transform duration-200 cursor-pointer">
+<img class="w-full h-full object-cover" data-alt="A sophisticated close-up portrait of an electronic music listener wearing high-end studio headphones. The lighting is moody and dark, with subtle neon blue rim lighting highlighting the contours of the headphones and face. The style is premium, cinematic, and deeply focused on audio fidelity." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAGA4mlufcTendwsuJZcIhdaOP92XLkPN0IcGou3am6qE6H1It1hYhph4Uu0GFUSknlxf5mtan-cbExbCG8-IVlUrRiD9zUQQxss0vYEYBeruizD3GdxL4zNA-3FBA0cSpRzBNSmSRLm4V2tF8MOI4pzO_vq4l_NzIWZexb4uO6fXvXrOOkgBt5k8eO8Og34nQSrCJRzzQhYf_1KFNc6MYwWGHwyUEuuxdAFUlTS4cY217sTiyAK3A7qQ"/>
+</div>
+<span class="font-headline-md text-headline-md font-bold tracking-tighter text-on-surface">AuralFlow</span>
+</div>
+<button class="w-10 h-10 flex items-center justify-center text-on-surface hover:opacity-80 transition-opacity active:scale-95 transition-transform duration-200">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">menu</span>
+</button>
+</header>
+<!-- Main Content Canvas -->
+<main class="relative z-10 pb-40">
+<!-- Hero Section -->
+<section class="relative h-[530px] md:h-[618px] w-full flex items-end mb-margin-desktop">
+<div class="absolute inset-0 z-0">
+<div class="w-full h-full bg-cover bg-center" data-alt="A massive, cinematic hero portrait of the electronic music artist 'Aura Synthetica'. The artist is silhouetted against a complex array of modular synthesizers and glowing LED panels in a darkened studio. The lighting is dramatic, featuring deep blacks and intense, saturated cool-toned rim lights that create a sense of mystery and high-end technical mastery." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuBDn9h03hqBtk-M3d2JJzgln-5dnTtICXJdG2VlF-jzcjHozxk2dDH2MXjx06-aX29tN8M7vVhHBnnr5xAtb_awXFhZyGlSJjIO26IaVerrC8K_im_v6wgtPFHs0we5k4-V3uK-nkHjkKYXm_oqKjigmBOtz8FVR58DJ1y5nWxFEiXkqUHna481i7Y1PpkxguuV8_nGIvsxyzKGIxFBFZXhZmJoYv-3MWhCFzZnL2eUyU0-obH6njkxrA');"></div>
+<div class="absolute inset-0 hero-gradient"></div>
+</div>
+<div class="relative z-10 w-full px-margin-mobile md:px-margin-desktop pb-8 flex flex-col md:flex-row md:items-end justify-between gap-6">
+<div>
+<h1 class="font-headline-xl text-headline-xl md:text-[80px] text-on-surface tracking-tighter text-glow mb-2">Aura Synthetica</h1>
+<p class="font-body-lg text-body-lg text-on-surface-variant max-w-xl">Architect of ethereal soundscapes. Blending organic textures with surgical analog synthesis to create immersive sonic environments.</p>
+</div>
+<div class="flex gap-4">
+<button class="bg-primary text-on-primary font-label-md text-label-md px-8 py-3 rounded-full active:scale-95 spring-transition hover:bg-opacity-90 flex items-center gap-2 shadow-[0px_4px_12px_rgba(170,199,255,0.3)]">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+                        Play Artist
+                    </button>
+<button class="glass-panel text-on-surface font-label-md text-label-md px-6 py-3 rounded-full active:scale-95 spring-transition hover:bg-white/10 border border-white/20">
+                        Follow
+                    </button>
+</div>
+</div>
+</section>
+<div class="px-margin-mobile md:px-margin-desktop grid grid-cols-1 lg:grid-cols-12 gap-8">
+<!-- Left Column: Spotlight & Top Tracks -->
+<div class="lg:col-span-8 space-y-12">
+<!-- Latest Release Spotlight (Bento style) -->
+<section>
+<h2 class="font-headline-md text-headline-md text-on-surface mb-6">Latest Transmission</h2>
+<div class="glass-panel rounded-xl p-6 flex flex-col md:flex-row gap-6 items-center shadow-[0px_4px_12px_rgba(0,0,0,0.5)] group cursor-pointer active:scale-[0.98] spring-transition relative overflow-hidden">
+<!-- Subtle hover glow -->
+<div class="absolute inset-0 bg-gradient-to-r from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+<div class="w-full md:w-48 h-48 rounded-lg overflow-hidden shrink-0 shadow-[0px_8px_24px_rgba(0,0,0,0.8)] relative">
+<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" data-alt="Album cover art for an electronic music release titled 'Nebula Echoes'. The design is minimalist and premium, featuring abstract, generative glass-like shapes refracting deep purple and cyan light against a pure black background. The aesthetic is extremely polished, evoking high-end audio engineering and deep space." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBjzbV1momJyfXnZUcd5eUNYynr3ETgUy3JUvysMqfOfBdQ83QtDqJZS-jEhciC941RDW1AQ0-V09bWlT0f0Vg2Iq9tgCZdy9yrQ39ti54pFLCqkpDYeuUBatLx7z2k1vhjSDFd3veVKed81NjEG-eJVOzHYVbhKOag7uBbSFK_QhgPsxe2ZB_HUpEEeBWtVBMVO9HRE0f4D_lR5CIdxKg2RA8pB6HuYMpGdD963B9v8e_Xsh49wtV4vQ"/>
+<!-- Play overlay -->
+<div class="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+<div class="w-12 h-12 rounded-full bg-white flex items-center justify-center shadow-lg">
+<span class="material-symbols-outlined text-black" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+</div>
+</div>
+</div>
+<div class="flex-1 space-y-4">
+<div>
+<span class="font-label-sm text-label-sm text-primary uppercase tracking-widest mb-1 block">New EP</span>
+<h3 class="font-headline-lg text-headline-lg-mobile md:text-headline-lg text-on-surface">Nebula Echoes</h3>
+<p class="font-body-md text-body-md text-on-surface-variant mt-1">Aura Synthetica • 2024</p>
+</div>
+<div class="flex gap-2 flex-wrap">
+<span class="px-2 py-1 rounded-full border border-hi-res text-hi-res font-label-sm text-label-sm bg-hi-res/10 flex items-center gap-1">
+                                    HI-RES
+                                </span>
+<span class="px-2 py-1 rounded-full border border-dolby-atmos text-dolby-atmos font-label-sm text-label-sm bg-dolby-atmos/10 flex items-center gap-1">
+                                    DOLBY ATMOS
+                                </span>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant line-clamp-2">Exploring the boundaries of granular synthesis, capturing the silence between the stars.</p>
+</div>
+</div>
+</section>
+<!-- Top Tracks List -->
+<section>
+<h2 class="font-headline-md text-headline-md text-on-surface mb-6">Frequencies</h2>
+<div class="space-y-2">
+<!-- Track 1 -->
+<div class="group flex items-center justify-between p-3 rounded-lg hover:bg-white/5 transition-colors cursor-pointer rounded-lg">
+<div class="flex items-center gap-4 flex-1">
+<div class="w-8 text-center font-label-md text-label-md text-on-surface-variant group-hover:hidden">1</div>
+<div class="w-8 flex items-center justify-center hidden group-hover:flex">
+<span class="material-symbols-outlined text-on-surface" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+</div>
+<img class="w-12 h-12 rounded object-cover shadow-[0px_2px_8px_rgba(0,0,0,0.5)]" data-alt="Thumbnail for a single track. Minimalist dark aesthetic, featuring a single glowing cyan geometric line cutting across a pure black square canvas. Clean, sharp, and highly technical in appearance." src="https://lh3.googleusercontent.com/aida-public/AB6AXuD8yfdnV3TF8NLiskDTUpuRkyWBuL5Agx_LQSuSdLHVB4lDXpAnbSIRH1Hgdwe5gkRXBHBz2Vb8ynjy6wslQM2fJIhNrrdFXhgB86N7HjkCgRH3f1tLpD26ZwuhS2yvmwu3KcVNyaHeMyeMzZ03_BmZ38HusJOK7CA4s5qneZDENJgQezfwaiVn8MhW3kOCipxJV8gpQLU-eoaVx6qUy0pGME1TlmWmnNWYJ4Qh4afXL0kiTRw2M3DXig"/>
+<div>
+<div class="font-label-md text-label-md text-on-surface">Subsonic Drift</div>
+<div class="font-body-md text-body-md text-on-surface-variant text-[13px]">12,450,291 plays</div>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<span class="px-2 py-0.5 rounded border border-lossless text-lossless font-label-sm text-[9px] bg-lossless/10 tracking-wider">LOSSLESS</span>
+<span class="font-body-md text-body-md text-on-surface-variant">4:12</span>
+<button class="text-on-surface-variant hover:text-on-surface opacity-0 group-hover:opacity-100 transition-opacity">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">more_horiz</span>
+</button>
+</div>
+</div>
+<!-- Track 2 -->
+<div class="group flex items-center justify-between p-3 rounded-lg hover:bg-white/5 transition-colors cursor-pointer rounded-lg">
+<div class="flex items-center gap-4 flex-1">
+<div class="w-8 text-center font-label-md text-label-md text-on-surface-variant group-hover:hidden">2</div>
+<div class="w-8 flex items-center justify-center hidden group-hover:flex">
+<span class="material-symbols-outlined text-on-surface" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+</div>
+<img class="w-12 h-12 rounded object-cover shadow-[0px_2px_8px_rgba(0,0,0,0.5)]" data-alt="Thumbnail for a music track. A close-up texture of dark, brushed metal with a subtle warm orange glow emitting from a seam, resembling high-end analog synthesizer hardware." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBcU0d77UrPcGJRrAEDIHa5pVkTkSzoPJLXml2yRTdGxRFAUWd4hbfARNHnuGOBm96MEgzxyPZ0cLGwT2dW-A1CccCikWMZC6uuyuIUj_PC0aPQ-eSn2E7NGCD7XO04Pl8IBuOiFWgpXm24ueosZpreCH_TG0qszWh7qskMZW0KepfWWmG4M6lX8GQ6U6lZwg3_1BqWiTdxxRn66ULcCzTScbWGdUHqMwgT2EehAp5729hMDoTs5pclwg"/>
+<div>
+<div class="font-label-md text-label-md text-on-surface">Modular Heartbeat</div>
+<div class="font-body-md text-body-md text-on-surface-variant text-[13px]">8,901,442 plays</div>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<span class="px-2 py-0.5 rounded border border-hi-res text-hi-res font-label-sm text-[9px] bg-hi-res/10 tracking-wider">HI-RES</span>
+<span class="font-body-md text-body-md text-on-surface-variant">6:34</span>
+<button class="text-on-surface-variant hover:text-on-surface opacity-0 group-hover:opacity-100 transition-opacity">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">more_horiz</span>
+</button>
+</div>
+</div>
+<!-- Track 3 -->
+<div class="group flex items-center justify-between p-3 rounded-lg hover:bg-white/5 transition-colors cursor-pointer rounded-lg">
+<div class="flex items-center gap-4 flex-1">
+<div class="w-8 text-center font-label-md text-label-md text-on-surface-variant group-hover:hidden">3</div>
+<div class="w-8 flex items-center justify-center hidden group-hover:flex">
+<span class="material-symbols-outlined text-on-surface" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+</div>
+<img class="w-12 h-12 rounded object-cover shadow-[0px_2px_8px_rgba(0,0,0,0.5)]" data-alt="Thumbnail for a music track. An abstract representation of sound waves moving through a dark liquid medium. Deep indigo and black tones with subtle silver highlights." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDHSbv-vr-3HJYAjGGwxsSBzBTUpn_PYiZKUW9QNb7d-f93XtFMdqBwhux0ihMQs4x2tzE0F3EAtkXH3ZHtK0E9guhXwV2Mg__XITuUMSDu1EkJVXeo3uAot1V_Kz_N772YCV1q2xsulvWgtjVg0mfS8yWM6aRMv0MVuaoRM59TAQQc72P7lztdILr3fCA6P68zZZjdlUQWgrhjPwC_n8hlJWld3n45GMBiNxjX4C62TG7S4A92g9P5QA"/>
+<div>
+<div class="font-label-md text-label-md text-on-surface">Kinetic Silence</div>
+<div class="font-body-md text-body-md text-on-surface-variant text-[13px]">5,120,998 plays</div>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<span class="px-2 py-0.5 rounded border border-dolby-atmos text-dolby-atmos font-label-sm text-[9px] bg-dolby-atmos/10 tracking-wider">ATMOS</span>
+<span class="font-body-md text-body-md text-on-surface-variant">5:05</span>
+<button class="text-on-surface-variant hover:text-on-surface opacity-0 group-hover:opacity-100 transition-opacity">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">more_horiz</span>
+</button>
+</div>
+</div>
+</div>
+</section>
+</div>
+<!-- Right Column: Discography Asymmetrical Grid -->
+<div class="lg:col-span-4">
+<div class="sticky top-24">
+<div class="flex justify-between items-end mb-6">
+<h2 class="font-headline-md text-headline-md text-on-surface">Discography</h2>
+<a class="font-label-md text-label-md text-primary hover:text-primary-fixed-dim transition-colors" href="#">View All</a>
+</div>
+<div class="grid grid-cols-2 gap-4">
+<!-- Big Item -->
+<div class="col-span-2 group cursor-pointer relative overflow-hidden rounded-lg">
+<div class="aspect-square w-full">
+<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" data-alt="Full album cover art. A striking, minimalist composition featuring a stark white orb hovering over a landscape of dark, metallic, jagged geometric formations. High contrast, cinematic lighting, evoking a sense of premium electronic music fidelity." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDcfRMLOej8epliVMIPPLh0IWZ3wu-W073PzNdTOxARKO4tCbSCoKnQ6CtdTeIM1y-yh_a4eH7pQODeeDGY1OwSAnHbjclra18Ub4P8jvtdEKYka3PBqJAkoIrnMJLkXiMiB0UAo2Pjm4JpL2lXyPJLp9ddIit3zsIrtsa-7Spq96cq39VZoB3PbKeJYCNGAIfz8wFCKCCY9TyCsH7Ew83-UNeYaoRqm2XRIDin3oYxj9rQfJeFrKl5mg"/>
+</div>
+<div class="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/90 to-transparent">
+<div class="font-label-md text-label-md text-on-surface truncate">Synthetic Horizons</div>
+<div class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-widest mt-1">Album • 2022</div>
+</div>
+</div>
+<!-- Small Item 1 -->
+<div class="col-span-1 group cursor-pointer relative overflow-hidden rounded-lg">
+<div class="aspect-square w-full">
+<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" data-alt="EP cover art. Abstract macro photography of shattered glass illuminated by a deep red laser line, set against a void of pure black. Sharp, edgy, and modern aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuD1Na217XURHMZ5I_N6vAU-CY8WU_BC1qJ4WC4Fn_-XAoJuE0jy4KUz3dGpVPg9EusSDN2nvQEosTGtD3S_YQPDk4Yjc_Rge-E9VkKq0M39XinO-WJm7HGAwiZlpQT93W9axDsrARhNX3jl7qbv5Eyy0fIWLUyMtU_s-h4YacmNA6rtZiMcl34QT7N_1l8xG-F7WPKlzUWcGJ8mFWr_8EUAkFmzY2w3Ot3THj5MwGzE-rDIG2SOLcP4Uw"/>
+</div>
+<div class="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/90 to-transparent">
+<div class="font-label-md text-[12px] text-on-surface truncate">Fracture EP</div>
+<div class="font-label-sm text-[9px] text-on-surface-variant uppercase tracking-widest mt-1">EP • 2021</div>
+</div>
+</div>
+<!-- Small Item 2 -->
+<div class="col-span-1 group cursor-pointer relative overflow-hidden rounded-lg">
+<div class="aspect-square w-full">
+<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" data-alt="Album cover art. A smooth, reflective metallic sphere resting on a matte black surface, reflecting a distorted studio environment. Highly polished, emphasizing clean audio production and sophisticated taste." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDcf4sx7tSQyKkW6-pXTcfx50DKUdf-amcX3SNDn3RFaTpFhkchepaT8FEv2yizBfeRaKs858eeGdmsWf8WEUP9JWaBPwxV8l8bS8sjOxJbVfL9LgPPzs_9pNJY0uwjQYGfxMt5wcGja1_aSJwpkbOROOosCccks582rG6SHU07FFdC1OBaXsVAOfU-N2N_xWdavWn5dfiJGdsCzqArU_AewI_eKHT-gu5NWe0ELPnMFWSwRSMW6vQruQ"/>
+</div>
+<div class="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/90 to-transparent">
+<div class="font-label-md text-[12px] text-on-surface truncate">Analog Dreams</div>
+<div class="font-label-sm text-[9px] text-on-surface-variant uppercase tracking-widest mt-1">Album • 2019</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Floating Global Player Bar -->
+<div class="fixed bottom-[88px] md:bottom-4 left-0 right-0 px-margin-mobile md:px-margin-desktop z-40 pointer-events-none flex justify-center">
+<div class="w-full max-w-4xl glass-bar rounded-xl p-3 flex items-center justify-between pointer-events-auto shadow-[0px_8px_32px_rgba(0,0,0,0.6)]">
+<div class="flex items-center gap-3">
+<img class="w-12 h-12 rounded shadow-[0px_2px_8px_rgba(0,0,0,0.5)]" data-alt="Thumbnail for currently playing track 'Subsonic Drift'. A glowing cyan line on black background, matching the top track artwork previously described." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBmqv-8y2o_Y3qJa6ptRMD4rBF0hP17JjvBLbcjAAtdUA7746KSgNm5aggOMRjFt3Rs76swTn3osu9WJWYEzxNP3YuMUmIZzRGidaz6M1cr4Wtgcd27L1jLKZlxIMDQkxKO2UlsCrKhVYRay1qolgmMtzenCCjXySO6xKfe0i5Hlzi3-BzWYA2a8GT1uX4lOOVlny4chYNjO21lzj9NgRYb61pVRlKA3CIxt5YT0U7YtlBWT6WR6RmN4g"/>
+<div>
+<div class="font-label-md text-label-md text-on-surface">Subsonic Drift</div>
+<div class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">Aura Synthetica</div>
+</div>
+</div>
+<div class="flex-1 max-w-md px-6 hidden sm:block">
+<!-- Custom Progress Bar -->
+<div class="relative w-full h-1 bg-white/20 rounded-full cursor-pointer group flex items-center">
+<div class="absolute h-full bg-white/40 rounded-full w-[60%]"></div> <!-- Buffered -->
+<div class="absolute h-full bg-primary rounded-full w-[35%]"></div> <!-- Played -->
+<div class="absolute h-3 w-3 bg-white rounded-full left-[35%] -ml-1.5 opacity-0 group-hover:opacity-100 spring-transition shadow-sm"></div>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<button class="text-on-surface-variant hover:text-on-surface transition-colors hidden sm:block">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">skip_previous</span>
+</button>
+<button class="w-10 h-10 rounded-full bg-white flex items-center justify-center active:scale-95 spring-transition shadow-[0px_2px_8px_rgba(255,255,255,0.2)]">
+<span class="material-symbols-outlined text-black" style="font-variation-settings: 'FILL' 1;">pause</span>
+</button>
+<button class="text-on-surface-variant hover:text-on-surface transition-colors hidden sm:block">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">skip_next</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Bottom Navigation Shell (Mobile Only) -->
+<nav class="md:hidden fixed bottom-0 left-0 right-0 m-4 rounded-xl backdrop-blur-[40px] bg-glass-surface border border-white/10 shadow-[0px_4px_12px_rgba(0,0,0,0.5)] w-full z-50 px-margin-mobile pb-6 w-[calc(100%-2rem)]">
+<div class="flex justify-around items-center pt-3">
+<button class="flex flex-col items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors active:scale-95 transition-all duration-200 ease-[cubic-bezier(0.2,0.8,0.2,1)] group">
+<span class="material-symbols-outlined mb-1 group-hover:text-primary transition-colors" style="font-variation-settings: 'FILL' 0;">explore</span>
+<span class="font-label-md text-label-md text-[10px]">Explore</span>
+</button>
+<button class="flex flex-col items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors active:scale-95 transition-all duration-200 ease-[cubic-bezier(0.2,0.8,0.2,1)] group">
+<span class="material-symbols-outlined mb-1 group-hover:text-primary transition-colors" style="font-variation-settings: 'FILL' 0;">radio</span>
+<span class="font-label-md text-label-md text-[10px]">Radio</span>
+</button>
+<button class="flex flex-col items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors active:scale-95 transition-all duration-200 ease-[cubic-bezier(0.2,0.8,0.2,1)] group">
+<span class="material-symbols-outlined mb-1 group-hover:text-primary transition-colors" style="font-variation-settings: 'FILL' 0;">library_music</span>
+<span class="font-label-md text-label-md text-[10px]">Library</span>
+</button>
+<button class="flex flex-col items-center justify-center text-primary font-bold active:scale-95 transition-all duration-200 ease-[cubic-bezier(0.2,0.8,0.2,1)] group">
+<span class="material-symbols-outlined mb-1 text-primary" style="font-variation-settings: 'FILL' 1;">search</span>
+<span class="font-label-md text-label-md text-[10px]">Search</span>
+</button>
+</div>
+</nav>
+</body></html>

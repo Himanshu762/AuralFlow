@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AuralFlow - Queue</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "dolby-atmos": "#3b82f6",
+                        "tertiary-fixed-dim": "#ffb691",
+                        "danger": "#ff453a",
+                        "on-error-container": "#ffdad6",
+                        "on-surface-variant": "#c0c6d6",
+                        "tertiary-container": "#eb6a12",
+                        "secondary": "#c8c6c8",
+                        "on-surface": "#e3e2e7",
+                        "surface-container-highest": "#343539",
+                        "outline": "#8b91a0",
+                        "on-secondary-container": "#b6b4b7",
+                        "inverse-on-surface": "#2f3034",
+                        "on-primary-fixed-variant": "#00468d",
+                        "on-primary-fixed": "#001b3e",
+                        "on-secondary-fixed-variant": "#474649",
+                        "on-background": "#e3e2e7",
+                        "tertiary-fixed": "#ffdbcb",
+                        "primary-fixed": "#d6e3ff",
+                        "background": "#121317",
+                        "primary-container": "#3e90ff",
+                        "surface-container-high": "#292a2e",
+                        "surface-container-low": "#1a1b1f",
+                        "secondary-fixed-dim": "#c8c6c8",
+                        "success": "#32d74b",
+                        "on-primary-container": "#002957",
+                        "primary-fixed-dim": "#aac7ff",
+                        "secondary-fixed": "#e4e2e4",
+                        "surface": "#121317",
+                        "inverse-primary": "#005db8",
+                        "on-secondary-fixed": "#1b1b1d",
+                        "surface-dim": "#121317",
+                        "on-primary": "#003064",
+                        "on-tertiary": "#552000",
+                        "surface-variant": "#343539",
+                        "border-subtle": "#38383a",
+                        "on-tertiary-container": "#4a1b00",
+                        "background-pure": "#000000",
+                        "surface-container": "#1e1f23",
+                        "tertiary": "#ffb691",
+                        "surface-tint": "#aac7ff",
+                        "on-tertiary-fixed-variant": "#793100",
+                        "primary": "#aac7ff",
+                        "error-container": "#93000a",
+                        "glass-surface": "rgba(28, 28, 30, 0.7)",
+                        "error": "#ffb4ab",
+                        "on-error": "#690005",
+                        "surface-bright": "#38393d",
+                        "surface-container-lowest": "#0d0e12",
+                        "secondary-container": "#474649",
+                        "on-tertiary-fixed": "#341100",
+                        "inverse-surface": "#e3e2e7",
+                        "lossless": "#10b981",
+                        "on-secondary": "#303032",
+                        "hi-res": "#a855f7",
+                        "outline-variant": "#414754"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "gutter": "16px",
+                        "stack-md": "16px",
+                        "unit": "4px",
+                        "margin-desktop": "40px",
+                        "margin-mobile": "20px",
+                        "stack-lg": "32px",
+                        "stack-sm": "8px"
+                    },
+                    "fontFamily": {
+                        "label-md": ["Inter"],
+                        "headline-xl": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "body-md": ["Inter"],
+                        "headline-lg": ["Inter"],
+                        "label-sm": ["Inter"],
+                        "headline-lg-mobile": ["Inter"],
+                        "body-lg": ["Inter"]
+                    },
+                    "fontSize": {
+                        "label-md": ["13px", { "lineHeight": "1.0", "letterSpacing": "0.02em", "fontWeight": "600" }],
+                        "headline-xl": ["48px", { "lineHeight": "1.1", "letterSpacing": "-0.04em", "fontWeight": "700" }],
+                        "headline-md": ["24px", { "lineHeight": "1.3", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "body-md": ["15px", { "lineHeight": "1.5", "letterSpacing": "-0.01em", "fontWeight": "400" }],
+                        "headline-lg": ["32px", { "lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "label-sm": ["11px", { "lineHeight": "1.0", "letterSpacing": "0.05em", "fontWeight": "700" }],
+                        "headline-lg-mobile": ["28px", { "lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "body-lg": ["17px", { "lineHeight": "1.5", "letterSpacing": "-0.01em", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body { background-color: #000000; color: #e3e2e7; margin: 0; padding: 0; font-family: 'Inter', sans-serif; overflow-x: hidden; }
+        .bg-glass-layer { background: rgba(28, 28, 30, 0.4); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.1); }
+        .player-bar-glass { background: rgba(20, 20, 22, 0.85); backdrop-filter: blur(40px); -webkit-backdrop-filter: blur(40px); border-top: 1px solid rgba(255,255,255,0.05); }
+        .queue-text-bg { position: fixed; top: 10%; right: -5%; font-size: 15vw; font-weight: 700; color: rgba(255, 255, 255, 0.03); letter-spacing: -0.05em; line-height: 0.8; z-index: -1; pointer-events: none; user-select: none; }
+        
+        .track-item:active { transform: scale(0.98); transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1); }
+        .drag-handle { cursor: grab; color: #8b91a0; }
+        .drag-handle:active { cursor: grabbing; }
+
+        /* Custom Scrollbar for list */
+        .hide-scroll::-webkit-scrollbar { display: none; }
+        .hide-scroll { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background-pure antialiased selection:bg-primary-container selection:text-on-primary-container flex flex-col min-h-screen">
+<!-- Shader Background -->
+<div class="fixed inset-0 z-[-2] pointer-events-none opacity-40 mix-blend-screen">
+        {{DATA:SCREEN:SCREEN_6}}
+    </div>
+<!-- Background Typography Element -->
+<div class="queue-text-bg font-headline-xl">QUEUE</div>
+<!-- Top App Bar -->
+<header class="fixed top-0 w-full flex justify-between items-center px-margin-mobile md:px-margin-desktop py-4 z-50 bg-transparent transition-transform duration-200" id="top-app-bar">
+<div class="flex items-center gap-4">
+<button class="text-on-surface hover:opacity-80 transition-opacity active:scale-95 flex items-center justify-center p-2 rounded-full bg-surface-container-highest/50 backdrop-blur-md border border-white/5">
+<span class="material-symbols-outlined">arrow_back</span>
+</button>
+<h1 class="font-headline-md text-headline-md font-bold tracking-tighter text-on-surface">Queue</h1>
+</div>
+<button class="text-on-surface hover:opacity-80 transition-opacity active:scale-95 p-2 rounded-full bg-surface-container-highest/50 backdrop-blur-md border border-white/5">
+<span class="material-symbols-outlined" data-icon="more_vert">more_vert</span>
+</button>
+</header>
+<!-- Main Content Area -->
+<main class="flex-grow pt-[80px] pb-[160px] px-margin-mobile md:px-margin-desktop w-full max-w-4xl mx-auto hide-scroll overflow-y-auto">
+<!-- Now Playing Section -->
+<section class="mb-12 pt-8">
+<h2 class="font-label-md text-label-md text-outline mb-6 uppercase tracking-wider">Now Playing</h2>
+<div class="bg-glass-layer rounded-[24px] p-4 flex items-center gap-6 shadow-[0px_8px_32px_rgba(0,0,0,0.4)] transition-all duration-300 hover:bg-surface-container/60 relative overflow-hidden group">
+<!-- Ambient glow behind active track -->
+<div class="absolute inset-0 bg-gradient-to-r from-primary-container/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-[24px]"></div>
+<div class="relative w-24 h-24 shrink-0 rounded-xl overflow-hidden shadow-[0px_4px_12px_rgba(0,0,0,0.5)]">
+<img class="w-full h-full object-cover" data-alt="A macro shot of a sleek, dark vinyl record spinning on a high-end turntable. The lighting is moody and cinematic, highlighting the grooves with thin streaks of cyan and magenta light reflecting off the shiny black surface. The overall aesthetic is premium, audiophile-focused, and seamlessly blends analog warmth with modern precision." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDhimAofkFfF-UeE1xoh09vCB_Bmo69-VhiE49FOZnJHGTYPd-swcvHnY-tNGV55pHuXMgpZ0MbTr21zxaeUr2D8jrnW4dgqVGptTXwdUuOWcaCm2M5JDxqzocItAaiwnMnaf375UK5BuPpoAwUBCjqSv8VYhNTL2eIUvlqH3Q9f0ZqeLEoChftliRHllLRniazlpPkhKxxwuLawyDxEkqwyBOskV2P-KSwUx6uwaQI4XgDsrQX-UbHmQ"/>
+<!-- Equalizer animation mock -->
+<div class="absolute inset-0 bg-black/40 backdrop-blur-[2px] flex items-center justify-center gap-[2px]">
+<div class="w-1 h-4 bg-primary rounded-full animate-[bounce_1s_infinite]"></div>
+<div class="w-1 h-6 bg-primary rounded-full animate-[bounce_1.2s_infinite_0.1s]"></div>
+<div class="w-1 h-3 bg-primary rounded-full animate-[bounce_0.8s_infinite_0.2s]"></div>
+<div class="w-1 h-5 bg-primary rounded-full animate-[bounce_1.1s_infinite_0.3s]"></div>
+</div>
+</div>
+<div class="flex-grow min-w-0 z-10">
+<div class="flex items-center gap-2 mb-1">
+<h3 class="font-headline-md text-headline-md text-on-surface truncate font-bold">Midnight Echoes</h3>
+<div class="px-2 py-0.5 rounded border border-lossless bg-lossless/10 flex items-center">
+<span class="font-label-sm text-label-sm text-lossless uppercase tracking-widest font-bold">Lossless</span>
+</div>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant truncate">The Synthetics</p>
+</div>
+<div class="shrink-0 flex gap-3 z-10 pr-2">
+<button class="text-on-surface hover:text-primary transition-colors p-2 active:scale-95">
+<span class="material-symbols-outlined" data-weight="fill" style="font-variation-settings: 'FILL' 1;">favorite</span>
+</button>
+</div>
+</div>
+</section>
+<!-- Up Next Section -->
+<section>
+<div class="flex justify-between items-end mb-6">
+<h2 class="font-label-md text-label-md text-outline uppercase tracking-wider">Up Next</h2>
+<button class="font-label-sm text-label-sm text-primary hover:text-primary-fixed transition-colors">CLEAR QUEUE</button>
+</div>
+<div class="flex flex-col gap-2">
+<!-- Track 1 -->
+<div class="track-item flex items-center p-3 rounded-xl hover:bg-surface-container/50 transition-colors group">
+<div class="drag-handle w-8 flex items-center justify-center opacity-50 group-hover:opacity-100 transition-opacity">
+<span class="material-symbols-outlined text-[20px]" data-icon="drag_indicator">drag_indicator</span>
+</div>
+<div class="w-12 h-12 rounded-md overflow-hidden shadow-sm mr-4 relative shrink-0">
+<img class="w-full h-full object-cover" data-alt="Abstract 3D rendering of glass spheres floating in a void of pure black space, illuminated by a single intense ray of violet light. The render is highly detailed, focusing on the refractions and caustic light patterns created by the glass, presenting a modern, pristine, and high-fidelity visual experience." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDxocy9kVRVfqg635zGFZjKO-algU9YQFg83kvzlWTr1P-JPMnx5h-myx2L4Wu1eIJos3VPXjEe1uf9bVL7veOGS0sPTpclqmDt6Odk0W0VNCRqIE3Ow1Rjkfx8zmvwLXlGsh8rHZkjN0OWLrITsdwfWyD07K4WBE9Z3eBQcm3GztKA7KOt9sdMR6Uo9qxp1pLn8YxD4h40lgLy0DvhBCsIlnoo2rf7r7-XfqW2yg6oGH7EK1WfqVmhAA"/>
+<div class="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+<span class="material-symbols-outlined text-white" data-icon="play_arrow" data-weight="fill" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+</div>
+</div>
+<div class="flex-grow min-w-0 flex flex-col justify-center">
+<div class="flex items-center gap-2">
+<h4 class="font-body-md text-body-md text-on-surface truncate font-semibold">Crystal Horizons</h4>
+<div class="px-1.5 py-0.5 rounded border border-hi-res bg-hi-res/10 flex items-center mt-0.5">
+<span class="font-label-sm text-label-sm text-hi-res uppercase tracking-widest text-[9px]">Hi-Res</span>
+</div>
+</div>
+<p class="font-label-sm text-label-sm text-on-surface-variant truncate mt-0.5">Luminous Array</p>
+</div>
+<div class="font-label-sm text-label-sm text-outline opacity-0 group-hover:opacity-100 transition-opacity w-12 text-right">4:12</div>
+</div>
+<!-- Track 2 -->
+<div class="track-item flex items-center p-3 rounded-xl hover:bg-surface-container/50 transition-colors group">
+<div class="drag-handle w-8 flex items-center justify-center opacity-50 group-hover:opacity-100 transition-opacity">
+<span class="material-symbols-outlined text-[20px]" data-icon="drag_indicator">drag_indicator</span>
+</div>
+<div class="w-12 h-12 rounded-md overflow-hidden shadow-sm mr-4 relative shrink-0">
+<img class="w-full h-full object-cover" data-alt="A close-up photograph of a brushed aluminum synthesizer control panel. The knobs are lit by tiny red LEDs, set against the dark grey metal. The depth of field is shallow, creating a soft blur around the edges. The aesthetic is tactile, industrial, and inherently musical, capturing the essence of electronic music production." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCGz7S6SSw60fyW2Lom_Gci_c355bg0cjjRE05KZ-HEnI1gwS3VEVFm-Ul0p4T8Vaqhr1zAamCQkBaF7K3irHeH8tM_aGukmQRmwuLPg6SvpJ896IQBcpVIR6neziU7X9P0F-mUNvau5p5XKuR1dpkGNWfAUisVH61W_LkYy1VKDQjveqT-puXbLKaMFnVPTmb-ObKZ6ysi25rQS0arm4Fhhm3eVQ5aeOG0EzBvACShVgpq7TJODy-KBg"/>
+<div class="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+<span class="material-symbols-outlined text-white" data-icon="play_arrow" data-weight="fill" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+</div>
+</div>
+<div class="flex-grow min-w-0 flex flex-col justify-center">
+<div class="flex items-center gap-2">
+<h4 class="font-body-md text-body-md text-on-surface truncate font-semibold">Analog Dreams</h4>
+<div class="px-1.5 py-0.5 rounded border border-dolby-atmos bg-dolby-atmos/10 flex items-center mt-0.5">
+<span class="font-label-sm text-label-sm text-dolby-atmos uppercase tracking-widest text-[9px]">Atmos</span>
+</div>
+</div>
+<p class="font-label-sm text-label-sm text-on-surface-variant truncate mt-0.5">Circuit Breakers</p>
+</div>
+<div class="font-label-sm text-label-sm text-outline opacity-0 group-hover:opacity-100 transition-opacity w-12 text-right">3:45</div>
+</div>
+<!-- Track 3 -->
+<div class="track-item flex items-center p-3 rounded-xl hover:bg-surface-container/50 transition-colors group">
+<div class="drag-handle w-8 flex items-center justify-center opacity-50 group-hover:opacity-100 transition-opacity">
+<span class="material-symbols-outlined text-[20px]" data-icon="drag_indicator">drag_indicator</span>
+</div>
+<div class="w-12 h-12 rounded-md overflow-hidden shadow-sm mr-4 relative shrink-0">
+<img class="w-full h-full object-cover" data-alt="Minimalist graphic design featuring deep charcoal gradients intersected by a single, sharp diagonal line in vivid emerald green. The texture resembles matte paper with a subtle grain, offering a stark, contemporary contrast that speaks to modern high-fidelity audio aesthetics." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCJF2PQ1XvXgKch2uYpFtyMmvMbYFw1ipAaVUdySiZJcMnOoV_lSIqXB3JC4qZNOntRololNZWnJ6U9K2vZZcdaImzUKyRvjOzk6yfbYIhvOa5MYOJIsSUGj_oxwcpwM5WGQyJfOmr92fYr8YHX7D-MgZ6wZWWwOHvSHUFIxE4j_HW9iF_yhf7zAfBFpGINSzwXdC96taRfNahyF0GPTTz8SQH1uikqsmC0CONnY9Ci8kN1YZODRfYmyQ"/>
+<div class="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+<span class="material-symbols-outlined text-white" data-icon="play_arrow" data-weight="fill" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+</div>
+</div>
+<div class="flex-grow min-w-0 flex flex-col justify-center">
+<div class="flex items-center gap-2">
+<h4 class="font-body-md text-body-md text-on-surface truncate font-semibold">Subsonic Flow</h4>
+<div class="px-1.5 py-0.5 rounded border border-lossless bg-lossless/10 flex items-center mt-0.5">
+<span class="font-label-sm text-label-sm text-lossless uppercase tracking-widest text-[9px]">Lossless</span>
+</div>
+</div>
+<p class="font-label-sm text-label-sm text-on-surface-variant truncate mt-0.5">Deep Frequencies</p>
+</div>
+<div class="font-label-sm text-label-sm text-outline opacity-0 group-hover:opacity-100 transition-opacity w-12 text-right">5:20</div>
+</div>
+</div>
+</section>
+</main>
+<!-- Floating Glass Player Bar -->
+<div class="fixed bottom-4 left-4 right-4 z-[60] player-bar-glass rounded-[24px] shadow-[0px_16px_40px_rgba(0,0,0,0.8)] overflow-hidden">
+<!-- Progress Bar -->
+<div class="w-full h-[2px] bg-white/10 group cursor-pointer relative">
+<div class="absolute top-0 left-0 h-full bg-white/30 w-[45%]"></div> <!-- Buffered -->
+<div class="absolute top-0 left-0 h-full bg-primary w-[30%] relative">
+<!-- Scrub Thumb -->
+<div class="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full opacity-0 group-hover:opacity-100 shadow-[0_0_8px_rgba(255,255,255,0.5)] transition-opacity"></div>
+</div>
+</div>
+<div class="p-4 flex items-center justify-between">
+<!-- Mini Track Info -->
+<div class="flex items-center gap-3 w-1/3 min-w-0">
+<div class="w-10 h-10 rounded-md overflow-hidden shrink-0 shadow-[0px_2px_8px_rgba(0,0,0,0.6)]">
+<img class="w-full h-full object-cover" data-alt="A macro shot of a sleek, dark vinyl record spinning on a high-end turntable. The lighting is moody and cinematic, highlighting the grooves with thin streaks of cyan and magenta light reflecting off the shiny black surface. The overall aesthetic is premium, audiophile-focused, and seamlessly blends analog warmth with modern precision." src="https://lh3.googleusercontent.com/aida-public/AB6AXuA2P7Nb2304f02IKsnbcIv9gvLvjvEPT4Gz2V-yVr8Hb_lBUzswIbDrWnKKsaaE2-HSUt8h-UwJ2hXdBdzmdobV246UAzk31-bk9EjYPBlWTzcuXf6Ycxp2CtY49KKLBCLYeQ33h7X3vEabSy97Cfv59PZDdvas0tCjXprprWMLUhRpXjUGVsC2Kg_iKrRDbIAh9qR75qDFJSnWdAxYQiOPCAy-09xj9_dmbX2-t-2oKhOzMITyJCwxAA"/>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-body-md text-body-md text-on-surface truncate font-semibold">Midnight Echoes</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant truncate">The Synthetics</span>
+</div>
+</div>
+<!-- Controls -->
+<div class="flex items-center justify-center gap-6 w-1/3 shrink-0">
+<button class="text-on-surface-variant hover:text-white transition-colors active:scale-90">
+<span class="material-symbols-outlined" data-icon="skip_previous" data-weight="fill" style="font-variation-settings: 'FILL' 1;">skip_previous</span>
+</button>
+<button class="w-12 h-12 bg-white rounded-full flex items-center justify-center text-black hover:scale-105 active:scale-95 transition-transform shadow-[0_0_20px_rgba(255,255,255,0.2)]">
+<span class="material-symbols-outlined text-[28px]" data-icon="pause" data-weight="fill" style="font-variation-settings: 'FILL' 1;">pause</span>
+</button>
+<button class="text-on-surface-variant hover:text-white transition-colors active:scale-90">
+<span class="material-symbols-outlined" data-icon="skip_next" data-weight="fill" style="font-variation-settings: 'FILL' 1;">skip_next</span>
+</button>
+</div>
+<!-- Extra Controls -->
+<div class="flex items-center justify-end gap-4 w-1/3 shrink-0 text-on-surface-variant">
+<button class="hover:text-white transition-colors active:scale-90">
+<span class="material-symbols-outlined text-[20px]" data-icon="volume_up">volume_up</span>
+</button>
+<button class="text-primary transition-colors active:scale-90 relative">
+<span class="material-symbols-outlined text-[20px]" data-icon="queue_music">queue_music</span>
+<span class="absolute -top-1 -right-1 w-1.5 h-1.5 bg-primary rounded-full"></span>
+</button>
+</div>
+</div>
+</div>
+</body></html>

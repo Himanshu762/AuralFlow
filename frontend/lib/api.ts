@@ -5,14 +5,31 @@
 
 import type { Track } from "../stores/playerStore";
 
-const API_BASE = "http://localhost:8000/api/v1";
+/* Override with NEXT_PUBLIC_API_BASE when the backend runs on another host
+   (a phone build talking to a desktop on the same network, for example). */
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000/api/v1";
 
 /* ------------------------------------------------------------------ */
 /* Score candidates with the RL agent                                 */
 /* ------------------------------------------------------------------ */
 
 export interface ScoreResponse {
-  recommendations: Array<Track & { confidence: number; mood_distance: number; predicted_mood: number[] }>;
+  recommendations: Array<
+    Track & {
+      /** Raw Q-value from the policy net: ranks candidates, not a percentage. */
+      confidence: number;
+      /** Null when the track carried no genre to read a mood from. */
+      mood_distance: number | null;
+      /**
+       * Bounded 0..1 mood affinity — what the UI shows as a match %.
+       * Null when there was no mood to compare against; show nothing rather
+       * than a number, since the neutral fallback would read as 100%.
+       */
+      match: number | null;
+      predicted_mood: number[];
+    }
+  >;
   predicted_mood: number[] | null;
   count: number;
 }
@@ -128,5 +145,43 @@ export async function computeMood(
     return res.json();
   } catch {
     return null;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* RL agent training status (sidebar "AI DJ" indicator)               */
+/* ------------------------------------------------------------------ */
+
+export interface AiStatsResponse {
+  explorationRate: number;
+  memorySize: number;
+  trainingSteps: number;
+  lastReward: number | null;
+  online: boolean;
+}
+
+const OFFLINE_STATS: AiStatsResponse = {
+  explorationRate: 0.3,
+  memorySize: 0,
+  trainingSteps: 0,
+  lastReward: null,
+  online: false,
+};
+
+export async function fetchAiStats(): Promise<AiStatsResponse> {
+  try {
+    const res = await fetch(`${API_BASE}/recommendations/stats`);
+    if (!res.ok) return OFFLINE_STATS;
+    const data = await res.json();
+    return {
+      explorationRate: data.exploration_rate ?? 0.3,
+      memorySize: data.memory_size ?? 0,
+      trainingSteps: data.training_steps ?? 0,
+      lastReward: data.last_reward ?? null,
+      online: true,
+    };
+  } catch {
+    /* Backend not running — the UI degrades to "AI DJ Offline". */
+    return OFFLINE_STATS;
   }
 }

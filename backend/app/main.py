@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
@@ -6,30 +8,14 @@ from app.db.base import engine, Base
 # Import all models so SQLAlchemy knows about them
 from app.models import User, Song, Session, Transition  # noqa: F401
 
-app = FastAPI(
-    title=settings.APP_NAME,
-    debug=settings.DEBUG,
-    version="1.0.0"
-)
-
-# Configure CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.BACKEND_CORS_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
-@app.on_event("startup")
-async def startup():
-    """Create database tables on startup and ensure default user exists"""
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Create tables and the local user on the way up; checkpoint on the way down."""
     Base.metadata.create_all(bind=engine)
 
-    # Auto-create default user so the app works out of the box
     from app.db.base import SessionLocal
     from app.models.user import User
+
     db = SessionLocal()
     try:
         default_user = db.query(User).filter(User.email == "local@auralflow.local").first()
@@ -40,6 +26,30 @@ async def startup():
         db.rollback()
     finally:
         db.close()
+
+    yield
+
+    # Persist what the agent learned this session.
+    from app.services.recommendation_service import recommendation_service
+
+    recommendation_service.save_checkpoint()
+
+
+app = FastAPI(
+    title=settings.APP_NAME,
+    debug=settings.DEBUG,
+    version="1.0.0",
+    lifespan=lifespan,
+)
+
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.BACKEND_CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/")

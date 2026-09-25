@@ -1,3 +1,14 @@
+"""
+Listening sessions and mood transitions.
+
+AuralFlow is a single-user local app: the backend serves one listener on one
+machine, so requests default to LOCAL_USER_ID rather than carrying a token.
+Pass an explicit user_id if you run the backend for more than one listener.
+
+Note: the desktop UI does not call these endpoints yet — it drives the agent
+directly through /recommendations. They are here for session-level analytics.
+"""
+
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 from typing import List, Dict, Optional
@@ -8,6 +19,9 @@ from app.db.base import get_db
 from app.models.session import Session as ListeningSession
 from app.models.transition import Transition
 from app.models.user import User
+
+# The single local listener. Created on startup by app.main.
+LOCAL_USER_ID = 1
 
 router = APIRouter()
 
@@ -44,7 +58,7 @@ class TransitionCreate(BaseModel):
 @router.post("/start")
 async def start_session(
     session_data: SessionCreate,
-    user_id: int = 1,  # TODO: Get from JWT auth
+    user_id: int = LOCAL_USER_ID,
     db: Session = Depends(get_db)
 ):
     """
@@ -83,7 +97,7 @@ async def start_session(
 async def end_session(
     session_id: int,
     session_data: SessionUpdate,
-    user_id: int = 1,  # TODO: Get from JWT auth
+    user_id: int = LOCAL_USER_ID,
     db: Session = Depends(get_db)
 ):
     """
@@ -136,7 +150,7 @@ async def end_session(
 async def record_transition(
     session_id: int,
     transition_data: TransitionCreate,
-    user_id: int = 1,  # TODO: Get from JWT auth
+    user_id: int = LOCAL_USER_ID,
     db: Session = Depends(get_db)
 ):
     """
@@ -183,7 +197,7 @@ async def record_transition(
 @router.get("/{session_id}")
 async def get_session(
     session_id: int,
-    user_id: int = 1,  # TODO: Get from JWT auth
+    user_id: int = LOCAL_USER_ID,
     db: Session = Depends(get_db)
 ):
     """
@@ -215,7 +229,7 @@ async def get_session(
 
 @router.get("/")
 async def get_user_sessions(
-    user_id: int = 1,  # TODO: Get from JWT auth
+    user_id: int = LOCAL_USER_ID,
     limit: int = 10,
     db: Session = Depends(get_db)
 ):

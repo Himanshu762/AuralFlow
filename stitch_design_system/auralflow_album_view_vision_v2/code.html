@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AuralFlow - Midnight Resonance</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "dolby-atmos": "#3b82f6",
+                        "tertiary-fixed-dim": "#ffb691",
+                        "danger": "#ff453a",
+                        "on-error-container": "#ffdad6",
+                        "on-surface-variant": "#c0c6d6",
+                        "tertiary-container": "#eb6a12",
+                        "secondary": "#c8c6c8",
+                        "on-surface": "#e3e2e7",
+                        "surface-container-highest": "#343539",
+                        "outline": "#8b91a0",
+                        "on-secondary-container": "#b6b4b7",
+                        "inverse-on-surface": "#2f3034",
+                        "on-primary-fixed-variant": "#00468d",
+                        "on-primary-fixed": "#001b3e",
+                        "on-secondary-fixed-variant": "#474649",
+                        "on-background": "#e3e2e7",
+                        "tertiary-fixed": "#ffdbcb",
+                        "primary-fixed": "#d6e3ff",
+                        "background": "#121317",
+                        "primary-container": "#3e90ff",
+                        "surface-container-high": "#292a2e",
+                        "surface-container-low": "#1a1b1f",
+                        "secondary-fixed-dim": "#c8c6c8",
+                        "success": "#32d74b",
+                        "on-primary-container": "#002957",
+                        "primary-fixed-dim": "#aac7ff",
+                        "secondary-fixed": "#e4e2e4",
+                        "surface": "#121317",
+                        "inverse-primary": "#005db8",
+                        "on-secondary-fixed": "#1b1b1d",
+                        "surface-dim": "#121317",
+                        "on-primary": "#003064",
+                        "on-tertiary": "#552000",
+                        "surface-variant": "#343539",
+                        "border-subtle": "#38383a",
+                        "on-tertiary-container": "#4a1b00",
+                        "background-pure": "#000000",
+                        "surface-container": "#1e1f23",
+                        "tertiary": "#ffb691",
+                        "surface-tint": "#aac7ff",
+                        "on-tertiary-fixed-variant": "#793100",
+                        "primary": "#aac7ff",
+                        "error-container": "#93000a",
+                        "glass-surface": "rgba(28, 28, 30, 0.7)",
+                        "error": "#ffb4ab",
+                        "on-error": "#690005",
+                        "surface-bright": "#38393d",
+                        "surface-container-lowest": "#0d0e12",
+                        "secondary-container": "#474649",
+                        "on-tertiary-fixed": "#341100",
+                        "inverse-surface": "#e3e2e7",
+                        "lossless": "#10b981",
+                        "on-secondary": "#303032",
+                        "hi-res": "#a855f7",
+                        "outline-variant": "#414754"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "gutter": "16px",
+                        "stack-md": "16px",
+                        "unit": "4px",
+                        "margin-desktop": "40px",
+                        "margin-mobile": "20px",
+                        "stack-lg": "32px",
+                        "stack-sm": "8px"
+                    },
+                    "fontFamily": {
+                        "label-md": ["Inter"],
+                        "headline-xl": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "body-md": ["Inter"],
+                        "headline-lg": ["Inter"],
+                        "label-sm": ["Inter"],
+                        "headline-lg-mobile": ["Inter"],
+                        "body-lg": ["Inter"]
+                    },
+                    "fontSize": {
+                        "label-md": ["13px", { "lineHeight": "1.0", "letterSpacing": "0.02em", "fontWeight": "600" }],
+                        "headline-xl": ["48px", { "lineHeight": "1.1", "letterSpacing": "-0.04em", "fontWeight": "700" }],
+                        "headline-md": ["24px", { "lineHeight": "1.3", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "body-md": ["15px", { "lineHeight": "1.5", "letterSpacing": "-0.01em", "fontWeight": "400" }],
+                        "headline-lg": ["32px", { "lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "label-sm": ["11px", { "lineHeight": "1.0", "letterSpacing": "0.05em", "fontWeight": "700" }],
+                        "headline-lg-mobile": ["28px", { "lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "body-lg": ["17px", { "lineHeight": "1.5", "letterSpacing": "-0.01em", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body {
+            background-color: #000000;
+            color: #e3e2e7;
+            overflow-x: hidden;
+        }
+        
+        .glass-panel {
+            background: rgba(28, 28, 30, 0.4);
+            backdrop-filter: blur(40px);
+            -webkit-backdrop-filter: blur(40px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .text-glow {
+            text-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+        }
+        
+        .album-shadow {
+            box-shadow: 0px 24px 48px rgba(0,0,0,0.8);
+        }
+
+        /* Smooth spring-like transitions */
+        .spring-transition {
+            transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+</head>
+<body class="antialiased min-h-screen flex flex-col font-body-md">
+<!-- Background Shader -->
+<div class="fixed inset-0 z-0 overflow-hidden pointer-events-none opacity-60 mix-blend-screen">
+
+</div>
+<!-- Top App Bar -->
+<header class="fixed top-0 w-full bg-transparent flex justify-between items-center px-margin-mobile md:px-margin-desktop py-4 z-50 flat no shadows">
+<div class="flex items-center gap-4">
+<button class="w-10 h-10 rounded-full overflow-hidden border border-white/10 hover:opacity-80 transition-opacity active:scale-95 transition-transform duration-200">
+<img alt="User profile avatar" class="w-full h-full object-cover" data-alt="A close up, high contrast cinematic portrait photograph of a young woman with neon blue lighting reflecting on her face, dark background, cyberpunk aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuC2fMONrxD7CvY6R8sIBkOz7DzKJYTv9PgJAPwWTO7fNXYV0oQZc4PcuOySwoMkBoTSwIXelXeoiSHCI47uvU1hkyMGXoqDbBpendUFto-LXNh81DmdtLsO--YSXcLrkx0KtKGd-p-aebOJSon1YxeDomU1xHO_U8R1mhMgXSQo7Hh_u2V_C35Wznd62YIozdOt2ft1nO99ZXUQ4dZaS3HejfCjbHSiAKIPNCCu_V_rLFUwFU7-wptQ8Q"/>
+</button>
+<h1 class="font-headline-md text-headline-md font-bold tracking-tighter text-on-surface">AuralFlow</h1>
+</div>
+<button class="w-10 h-10 flex items-center justify-center rounded-full glass-panel hover:bg-white/10 transition-colors active:scale-95 duration-200">
+<span class="material-symbols-outlined" data-icon="menu">menu</span>
+</button>
+</header>
+<!-- Main Content Canvas -->
+<main class="relative z-10 flex-1 pt-24 pb-32 px-margin-mobile md:px-margin-desktop max-w-7xl mx-auto w-full">
+<!-- Background Header Text -->
+<div class="absolute top-20 left-0 w-full overflow-hidden pointer-events-none opacity-5 select-none flex justify-center z-0">
+<h1 class="text-[12rem] font-black tracking-tighter text-white whitespace-nowrap">ALBUM</h1>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-12 gap-8 md:gap-12 relative z-10 mt-8 md:mt-16">
+<!-- Left Column: Album Art & Info (Sticky on Desktop) -->
+<div class="md:col-span-5 flex flex-col gap-6 md:sticky top-32 h-fit">
+<!-- Album Cover Parallax Container -->
+<div class="relative w-full aspect-square rounded-2xl overflow-hidden album-shadow group transform perspective-1000">
+<div class="absolute inset-0 bg-gradient-to-tr from-black/40 to-transparent z-10 pointer-events-none mix-blend-overlay"></div>
+<img alt="Midnight Resonance Album Cover" class="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-105" data-alt="Abstract 3D rendered album art featuring flowing geometric shapes glowing with deep violet, electric blue, and magenta neon lights against a pitch black background, creating a sense of midnight resonance and electronic music." id="albumCover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDJp66KrwVzqzHvFwZ0RthEPhbnKifLdqW05qZzCvzx92ASuxeOdx1I9oYNKt3JXNxdYESD7C-OP3C72H7JziR2_cqKGggijTk2UYAaM7w_aCGD_aJxhsJIR_SN8p4QAwWa-708O66bdedrETQbiO2xyrZTNyUui1L81qPBrFCc05bCAms5StKM9wgOI7cNA1uNbR5lS1qkz3hu2E-jfVcQ4fOKPCYcjDZfegPB8M6Iu0guYwgMcEt9_g"/>
+</div>
+<!-- Album Metadata -->
+<div class="flex flex-col gap-2 mt-4">
+<h2 class="font-headline-xl text-headline-xl text-glow">Midnight Resonance</h2>
+<p class="font-headline-md text-headline-md text-on-surface-variant font-normal">Kaelen Flow</p>
+<div class="flex flex-wrap gap-3 mt-2">
+<span class="inline-flex items-center px-2 py-1 rounded-full border border-hi-res/50 bg-hi-res/10 text-hi-res font-label-sm text-label-sm">
+                            HI-RES
+                        </span>
+<span class="inline-flex items-center px-2 py-1 rounded-full border border-lossless/50 bg-lossless/10 text-lossless font-label-sm text-label-sm">
+                            LOSSLESS
+                        </span>
+<span class="inline-flex items-center px-2 py-1 rounded-full border border-dolby-atmos/50 bg-dolby-atmos/10 text-dolby-atmos font-label-sm text-label-sm">
+                            DOLBY ATMOS
+                        </span>
+</div>
+<p class="font-body-md text-body-md text-outline mt-2">2024 • 12 Tracks • 48 min</p>
+<div class="flex gap-4 mt-6">
+<button class="flex-1 bg-primary text-on-primary font-label-md text-label-md py-4 rounded-full flex items-center justify-center gap-2 hover:bg-primary-fixed-dim transition-colors active:scale-95 duration-200">
+<span class="material-symbols-outlined" data-weight="fill">play_arrow</span>
+                            Play Album
+                        </button>
+<button class="w-14 h-14 rounded-full glass-panel flex items-center justify-center hover:bg-white/10 transition-colors active:scale-95 duration-200">
+<span class="material-symbols-outlined">favorite</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Right Column: Tracklist -->
+<div class="md:col-span-7 flex flex-col gap-2">
+<!-- Track Item -->
+<div class="group flex items-center gap-4 p-4 rounded-xl hover:bg-white/5 transition-colors cursor-pointer">
+<div class="w-8 text-center font-label-md text-label-md text-on-surface-variant group-hover:hidden">1</div>
+<div class="w-8 text-center hidden group-hover:block">
+<span class="material-symbols-outlined text-primary">play_arrow</span>
+</div>
+<div class="flex-1 flex flex-col">
+<span class="font-body-md text-body-md font-semibold text-on-surface">Neon Pulse</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Kaelen Flow</span>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant">3:42</span>
+<button class="w-8 h-8 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-white/10">
+<span class="material-symbols-outlined text-[20px]">more_horiz</span>
+</button>
+</div>
+<!-- Track Item (Playing) -->
+<div class="group flex items-center gap-4 p-4 rounded-xl bg-primary/10 border border-primary/20 transition-colors cursor-pointer">
+<div class="w-8 flex items-center justify-center">
+<div class="w-4 h-4 relative flex justify-between items-end">
+<div class="w-[3px] bg-primary rounded-t animate-[bounce_1s_infinite] h-full"></div>
+<div class="w-[3px] bg-primary rounded-t animate-[bounce_1s_infinite_0.2s] h-3/4"></div>
+<div class="w-[3px] bg-primary rounded-t animate-[bounce_1s_infinite_0.4s] h-1/2"></div>
+</div>
+</div>
+<div class="flex-1 flex flex-col">
+<span class="font-body-md text-body-md font-semibold text-primary">Midnight Resonance</span>
+<span class="font-label-sm text-label-sm text-primary/70">Kaelen Flow</span>
+</div>
+<span class="inline-flex items-center px-1.5 py-0.5 rounded border border-lossless/50 text-lossless font-label-sm text-[9px] mr-2">LOSSLESS</span>
+<span class="font-label-sm text-label-sm text-primary">4:15</span>
+<button class="w-8 h-8 rounded-full flex items-center justify-center hover:bg-primary/20">
+<span class="material-symbols-outlined text-[20px] text-primary">more_horiz</span>
+</button>
+</div>
+<!-- Track Item -->
+<div class="group flex items-center gap-4 p-4 rounded-xl hover:bg-white/5 transition-colors cursor-pointer">
+<div class="w-8 text-center font-label-md text-label-md text-on-surface-variant group-hover:hidden">3</div>
+<div class="w-8 text-center hidden group-hover:block">
+<span class="material-symbols-outlined text-primary">play_arrow</span>
+</div>
+<div class="flex-1 flex flex-col">
+<span class="font-body-md text-body-md font-semibold text-on-surface">Echo Chamber</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Kaelen Flow</span>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant">5:01</span>
+<button class="w-8 h-8 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-white/10">
+<span class="material-symbols-outlined text-[20px]">more_horiz</span>
+</button>
+</div>
+<!-- Track Item -->
+<div class="group flex items-center gap-4 p-4 rounded-xl hover:bg-white/5 transition-colors cursor-pointer">
+<div class="w-8 text-center font-label-md text-label-md text-on-surface-variant group-hover:hidden">4</div>
+<div class="w-8 text-center hidden group-hover:block">
+<span class="material-symbols-outlined text-primary">play_arrow</span>
+</div>
+<div class="flex-1 flex flex-col">
+<span class="font-body-md text-body-md font-semibold text-on-surface">Synthetic Dreams</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Kaelen Flow</span>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant">3:18</span>
+<button class="w-8 h-8 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-white/10">
+<span class="material-symbols-outlined text-[20px]">more_horiz</span>
+</button>
+</div>
+</div>
+</div>
+</main>
+<!-- Glass Player Bar -->
+<div class="fixed bottom-0 left-0 right-0 m-4 rounded-2xl glass-panel z-[60] shadow-[0px_4px_24px_rgba(0,0,0,0.8)] overflow-hidden hidden md:flex items-center px-4 py-3 gap-4">
+<!-- Progress Bar Background -->
+<div class="absolute top-0 left-0 w-full h-[2px] bg-white/10">
+<div class="h-full bg-white/30 w-1/2"></div> <!-- Buffered -->
+<div class="absolute top-0 left-0 h-full bg-primary w-1/3 shadow-[0_0_10px_rgba(170,199,255,0.5)]"></div> <!-- Played -->
+</div>
+<div class="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0">
+<img alt="Currently playing album art" class="w-full h-full object-cover" data-alt="Abstract 3D rendered album art featuring flowing geometric shapes glowing with deep violet, electric blue, and magenta neon lights against a pitch black background, creating a sense of midnight resonance and electronic music." src="https://lh3.googleusercontent.com/aida-public/AB6AXuA9VUr7Ar09hTfpsFlQntjacXObyU4nl2Yx2bbos-dKAir5ezYBmixGfWC4zwL8dwLRh86-XTAG3a0ZbvDHCiVLqWrj5A8y8_bjfaR8copSVpkZGt7L-WqE_6gDn-BuQSaVpxbOo0ZH1qhygvhIk-TDoCOC6BNRCwSBLLIG4YeiA1kKYnf7WSW5mE1i0EEkOj2YzoAQAdnGByDysAojDYWPC8IY3zcG22qdPiRhI3eWOidqoG8An-5NQQ"/>
+</div>
+<div class="flex flex-col flex-1 min-w-0">
+<span class="font-label-md text-label-md text-on-surface truncate">Midnight Resonance</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant truncate">Kaelen Flow</span>
+</div>
+<div class="flex items-center gap-6 px-4">
+<button class="text-on-surface-variant hover:text-on-surface transition-colors">
+<span class="material-symbols-outlined">skip_previous</span>
+</button>
+<button class="w-10 h-10 rounded-full bg-white text-black flex items-center justify-center hover:scale-105 active:scale-95 transition-all duration-200 shadow-[0_0_15px_rgba(255,255,255,0.3)]">
+<span class="material-symbols-outlined" data-weight="fill">pause</span>
+</button>
+<button class="text-on-surface-variant hover:text-on-surface transition-colors">
+<span class="material-symbols-outlined">skip_next</span>
+</button>
+</div>
+<div class="flex items-center gap-3">
+<span class="inline-flex items-center px-1.5 py-0.5 rounded border border-lossless/50 bg-lossless/10 text-lossless font-label-sm text-[9px]">LOSSLESS</span>
+<button class="text-on-surface-variant hover:text-on-surface transition-colors">
+<span class="material-symbols-outlined text-[20px]">volume_up</span>
+</button>
+</div>
+</div>
+<!-- Bottom Nav Bar (Mobile) -->
+<nav class="fixed bottom-0 left-0 right-0 m-4 rounded-xl backdrop-blur-[40px] bg-glass-surface border border-white/10 shadow-[0px_4px_12px_rgba(0,0,0,0.5)] flex justify-between items-center px-margin-mobile pb-6 pt-4 z-50 md:hidden">
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors active:scale-95 transition-all duration-200 ease-[cubic-bezier(0.2,0.8,0.2,1)] w-16" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="explore">explore</span>
+<span class="font-label-sm text-label-sm">Explore</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors active:scale-95 transition-all duration-200 ease-[cubic-bezier(0.2,0.8,0.2,1)] w-16" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="radio">radio</span>
+<span class="font-label-sm text-label-sm">Radio</span>
+</a>
+<a class="flex flex-col items-center justify-center text-primary font-bold active:scale-95 transition-all duration-200 ease-[cubic-bezier(0.2,0.8,0.2,1)] w-16" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="library_music" data-weight="fill">library_music</span>
+<span class="font-label-sm text-label-sm">Library</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors active:scale-95 transition-all duration-200 ease-[cubic-bezier(0.2,0.8,0.2,1)] w-16" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="search">search</span>
+<span class="font-label-sm text-label-sm">Search</span>
+</a>
+</nav>
+<script>
+        // Simple parallax effect for album cover on mouse move (desktop only)
+        document.addEventListener('DOMContentLoaded', () => {
+            const albumContainer = document.querySelector('.album-shadow.group');
+            const albumImage = document.getElementById('albumCover');
+
+            if (albumContainer && window.innerWidth > 768) {
+                albumContainer.addEventListener('mousemove', (e) => {
+                    const rect = albumContainer.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const y = e.clientY - rect.top;
+                    
+                    const centerX = rect.width / 2;
+                    const centerY = rect.height / 2;
+                    
+                    const rotateX = ((y - centerY) / centerY) * -10; // Max 10 deg
+                    const rotateY = ((x - centerX) / centerX) * 10;
+                    
+                    albumImage.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale(1.05)`;
+                });
+
+                albumContainer.addEventListener('mouseleave', () => {
+                    albumImage.style.transform = `perspective(1000px) rotateX(0) rotateY(0) scale(1)`;
+                });
+            }
+        });
+    </script>
+</body></html>

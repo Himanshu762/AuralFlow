@@ -17,109 +17,140 @@ AuralFlow sees this as a **coherent emotional arc**, not random genre-hopping.
 
 ## 🏗️ Architecture
 
+AuralFlow is a **native app**, not a web page in a window. One process to
+launch: the Tauri shell starts the audio engine and the recommendation backend
+itself and shuts them down with the window.
+
 ```
-┌─────────────────────────────────────────────┐
-│  Desktop App (Tauri ~20MB RAM)              │
-│  Native macOS/Windows/Linux window          │
-│  Uses system WebKit (no Chromium)           │
-├─────────────────────────────────────────────┤
-│  Web App (Next.js on :3000)                 │  ← same code
-│  Search via Monochrome (browser, :5173)     │
-│  HTML5 <audio> FLAC playback                │
-│  Mood visualization + AI DJ controls        │
-└──────────────┬──────────────────────────────┘
-               │ HTTP (JSON)
-               ▼
-┌─────────────────────────────────────────────┐
-│  Backend (FastAPI on :8000)                 │
-│  RL Agent scoring & training                │
-│  Mood mapping (genre → 5D vector)           │
-│  Session tracking                           │
-│  Supabase (PostgreSQL)                      │
-└─────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│  Native shell (Tauri 2)                                      │
+│  Windows · macOS · Linux · Android · iOS                     │
+│  Custom window toolbar, system tray, single instance,        │
+│  remembered window geometry                                  │
+│                                                              │
+│  ┌─── Regular layout (desktop windows) ──────────────────┐   │
+│  │ Toolbar: ‹ › · search · engine status · inspector     │   │
+│  │ ┌────────┬──────────────────┬──────────────────────┐  │   │
+│  │ │Sidebar │ Content          │ Audio Engine rail    │  │   │
+│  │ │Discover│ shelves / lists  │ telemetry, spectrum, │  │   │
+│  │ │Library │                  │ queue, mood vector   │  │   │
+│  │ └────────┴──────────────────┴──────────────────────┘  │   │
+│  │ Player bar: art · transport · progress · volume       │   │
+│  └───────────────────────────────────────────────────────┘   │
+│                                                              │
+│  ┌─── Compact layout (phones, narrow windows) ───────────┐   │
+│  │ Full-bleed content, safe-area aware                    │  │
+│  │ Mini player → tap raises the Now Playing sheet         │  │
+│  │ Platform tab bar: Listen Search Library Queue Audio    │  │
+│  └───────────────────────────────────────────────────────┘   │
+│                                                              │
+│  Services the shell manages:                                 │
+│  ├── Monochrome audio engine   (Node,   :5173)              │
+│  └── Recommendation backend    (Python, :8000)              │
+└──────────────────────────────────────────────────────────────┘
+                               │ HTTP (JSON)
+                               ▼
+┌──────────────────────────────────────────────────────────────┐
+│  FastAPI backend                                             │
+│  /recommendations/score     rank candidates with the agent   │
+│  /recommendations/feedback  train on plays, skips, likes     │
+│  /recommendations/mood      genre → 5-D mood vector          │
+│  /recommendations/stats     exploration rate, buffer, steps  │
+│  SQLite by default; PyTorch DQN in ml/agents                 │
+└──────────────────────────────────────────────────────────────┘
 ```
+
+### Layouts
+
+The UI picks its layout from the window width, not the platform, so a resized
+desktop window and a tablet in portrait both get whatever actually fits. Track
+lists use **container queries**: columns drop out based on the list's own
+width, because these lists sit beside the inspector rail and a wide window does
+not mean a wide list.
+
+### Design system
+
+Tokens come from `stitch_design_system/` — the Material-style surface ramp
+(`#0d0e12` → `#343539`), `#aac7ff` / `#3e90ff` accents, the quality colours
+(hi-res `#a855f7`, lossless `#10b981`, Atmos `#3b82f6`), and the Inter type
+scale. The desktop workstation board supplies the sidebar sections, bitstream
+telemetry and spectrum widgets; the vision boards supply the Now Playing
+waveform, control pod and the Audio Quality settings screen.
 
 ---
 
 ## 🚀 Getting Started
 
+Full setup, packaging and mobile instructions live in
+**[QUICKSTART.md](QUICKSTART.md)**. The short version:
+
 ### Prerequisites
 
-- **Python 3.11+**
-- **Node.js 18+**
-- **Supabase account** (free tier works — [supabase.com](https://supabase.com))
-- **Rust** (only for the desktop app — optional)
+- **Rust** (stable) — builds the native shell
+- **Node.js 20+** — the UI and the audio engine
+- **Python 3.11+** — the recommendation backend
+- **[Monochrome](https://github.com/monochrome-music/monochrome)** — the audio engine. A separate project, not committed here; fetch it into `monochrome_app/` at the commit `engine/vendor.json` pins. Keep it current, or playback stops working quietly ([why](engine/README.md))
+- On Linux, the webview system libraries (`webkit2gtk-4.1` and friends — see QUICKSTART)
 
----
+No database account is needed. The backend uses a local SQLite file
+(`backend/auralflow.db`), created on first start.
 
-### 1️⃣ Backend Setup
-
-```bash
-cd backend
-
-# Create virtual environment
-python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Configure your Supabase connection
-# Edit .env and set DATABASE_URL to your Supabase connection string
-# (Dashboard → Settings → Database → Connection string → URI)
-cp .env.example .env
-# Then edit .env with your Supabase credentials
-
-# Start the backend (tables are auto-created on first startup)
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-Backend will be available at: `http://localhost:8000`
-API docs (Swagger): `http://localhost:8000/docs`
-
-> **Note:** Get your Supabase connection string from: Dashboard → Settings → Database → Connection string (URI). Tables are auto-created on first startup.
-
----
-
-### 2️⃣ Frontend Setup
+### Install
 
 ```bash
-cd frontend
-
-# Install dependencies
-npm install
-
-# Run development server
-npm run dev
+cd frontend && npm install && cd ..
+cd desktop && npm install && cd ..
+python3 -m venv backend/venv && backend/venv/bin/pip install -r backend/requirements.txt
+git clone https://github.com/monochrome-music/monochrome monochrome_app
+git -C monochrome_app checkout 88481062d398
+node engine/apply.mjs
+cd monochrome_app && npm install && cd ..
 ```
 
-Frontend will be available at: `http://localhost:3000`
-
----
-
-### 3️⃣ Monochrome Setup
-
-AuralFlow uses [Monochrome](https://github.com/monochrome-music/monochrome) as its music discovery and FLAC streaming engine.
+### Run
 
 ```bash
-cd monochrome_app
-npm install
-npm run dev
+cd desktop && npm run dev
 ```
 
-Monochrome will run on `http://localhost:5173`.
+One command. The shell starts Monochrome and the backend as child processes and
+kills them when the window closes — including when it is killed outright, so
+nothing is left holding a port afterwards.
 
----
+To work on the UI in a browser instead, `python3 start.py` brings up all three
+services with health checks and prints what is listening; it names anything
+that is missing rather than failing silently.
 
-### 4️⃣ Desktop App (Optional)
+### Install
 
-The desktop app wraps the web UI in a native window using [Tauri](https://tauri.app/) — only ~20MB RAM vs Electron's 300MB.
+To have AuralFlow open from the application menu like any other player:
 
 ```bash
-# Requires Rust: https://rustup.rs
-cd desktop/src-tauri
-cargo tauri dev
+cd desktop && npm run build && cd ..
+./desktop/install-local.sh
 ```
+
+### Package
+
+```bash
+cd desktop && npm run build      # installers in src-tauri/target/release/bundle/
+```
+
+The interface and the audio engine are rebuilt first if either is out of date,
+so this is the only command needed. The engine ships inside the app; an
+installed copy needs no Node.js at runtime.
+
+### Phones
+
+```bash
+cd desktop
+npm run android:init && npm run android:dev
+npm run ios:init && npm run ios:dev          # macOS + Xcode
+```
+
+A phone cannot host the Node and Python services, so point it at a machine that
+can via `NEXT_PUBLIC_MONOCHROME_URL` and `NEXT_PUBLIC_API_BASE`
+(see `frontend/.env.example`).
 
 ---
 
@@ -127,43 +158,50 @@ cargo tauri dev
 
 ```
 AuralFlow/
-├── backend/              # FastAPI backend
-│   ├── app/
-│   │   ├── api/
-│   │   │   └── endpoints/    # REST endpoints
-│   │   │       ├── auth.py
-│   │   │       ├── sessions.py
-│   │   │       └── recommendations.py
-│   │   ├── core/             # Config & security
-│   │   ├── db/               # Database setup (SQLite)
-│   │   ├── models/           # SQLAlchemy models
-│   │   └── services/         # Business logic
-│   │       ├── track_service.py
-│   │       ├── mood_service.py
-│   │       ├── mood_mapper.py
-│   │       └── recommendation_service.py
-│   ├── requirements.txt
-│   └── .env
-├── ml/                   # Machine learning
-│   ├── agents/
-│   │   └── music_rl_agent.py
-│   └── models/
-├── frontend/             # Next.js frontend
-│   ├── app/
-│   │   ├── layout.tsx
-│   │   ├── page.tsx          # Main music player UI
-│   │   └── globals.css
-│   └── public/
-├── desktop/              # Tauri desktop app
+├── backend/                    # FastAPI backend
+│   └── app/
+│       ├── api/endpoints/      # auth, sessions, recommendations
+│       ├── core/               # config & security
+│       ├── db/                 # SQLAlchemy session + base
+│       ├── models/             # User, Song, Session, Transition
+│       └── services/           # mood mapping, track + recommendation services
+├── ml/
+│   └── agents/music_rl_agent.py   # PyTorch DQN over a 5-D mood space
+├── frontend/                   # Next.js UI (static export)
+│   ├── app/                    # shell, layout, design tokens
+│   ├── components/
+│   │   ├── Toolbar.tsx         # the only top chrome: window controls + search
+│   │   ├── Sidebar.tsx         # desktop navigation, mood flow, AI DJ status
+│   │   ├── TabBar.tsx          # platform tab bar (compact layout)
+│   │   ├── PlayerBar.tsx       # desktop transport
+│   │   ├── MiniPlayer.tsx      # compact transport
+│   │   ├── AudioEngineRail.tsx # inspector: telemetry, spectrum, queue, mood
+│   │   ├── NowPlayingScreen.tsx
+│   │   ├── TrackRow.tsx        # container-query track row
+│   │   ├── Rail.tsx            # shared seek / volume slider
+│   │   ├── Equalizer.tsx       # bands + the adaptive stabiliser
+│   │   ├── ImportPanel.tsx     # bring a library across from another service
+│   │   ├── LyricsPane.tsx      # synced lyrics
+│   │   └── *Tab.tsx            # Home, Search, Library, Queue, Settings
+│   ├── hooks/
+│   │   ├── useMonochrome.ts    # postMessage bridge to the audio engine
+│   │   ├── useKeyboardShortcuts.ts
+│   │   └── useFormFactor.ts    # regular vs compact layout
+│   ├── lib/                    # API client + formatting/quality helpers
+│   └── stores/playerStore.ts   # Zustand app state
+├── engine/                     # our additions to the vendored audio engine
+│   ├── auralflow-bridge.js     # the whole integration, grafted on at build
+│   ├── patches/                # small edits to engine source
+│   └── apply.mjs               # puts both back after a re-vendor
+├── desktop/                    # Tauri shell
 │   └── src-tauri/
-│       ├── Cargo.toml
-│       ├── tauri.conf.json
-│       └── src/main.rs
-├── monochrome_app/       # Self-hosted Monochrome instance
-└── docs/                 # Documentation
+│       ├── src/lib.rs          # window, tray, single instance, window state
+│       ├── src/services.rs     # starts/stops Monochrome + backend
+│       ├── capabilities/       # Tauri v2 permissions
+│       └── icons/              # app icons
+├── stitch_design_system/       # Stitch design boards the UI is built from
+└── start.py                    # dev launcher with health checks
 ```
-
----
 
 ## 🧠 How It Works
 
@@ -205,6 +243,7 @@ The RL agent learns from your behavior:
 - `POST /api/v1/recommendations/score` - Score and rank candidate tracks
 - `POST /api/v1/recommendations/feedback` - Submit listening feedback
 - `POST /api/v1/recommendations/mood` - Compute mood vector for a track
+- `GET /api/v1/recommendations/stats` - Agent status: exploration rate, replay-buffer size, training steps
 
 ### Sessions
 - `POST /api/v1/sessions/start` - Start listening session
@@ -221,18 +260,34 @@ The RL agent learns from your behavior:
 - ✅ Monochrome integration (FLAC streaming)
 - ✅ Mood analysis engine (genre → 5D vector)
 - ✅ RL agent implementation
-- ✅ Frontend player UI
-- ✅ Mood visualization
 - ✅ Tauri desktop app
 
-### Phase 2: Enhancement
-- [ ] Historical mood analytics dashboard
-- [ ] Playlist generation from mood arcs
-- [ ] Offline mode with cached tracks
-- [ ] System tray controls (desktop)
+### Phase 2: Native shell ✅
+- ✅ Native window chrome — one toolbar, no page header or navbar
+- ✅ Desktop layout: sidebar, content, audio-engine inspector, player bar
+- ✅ Compact layout: mini player + platform tab bar, safe-area aware
+- ✅ Services auto-started and stopped by the shell
+- ✅ System tray controls, single instance, remembered window geometry
+- ✅ Keyboard shortcuts
+- ✅ Audio Lab settings, persisted locally
+- ✅ Android / iOS build targets wired up
 
-### Phase 3: Mobile & Expansion
-- [ ] Flutter mobile app (iOS + Android)
+### Phase 3: Library and sound ✅
+- ✅ Real FFT spectrum, read from the engine's own analyser
+- ✅ Equaliser: 16 bands, presets, preamp
+- ✅ Adaptive stabiliser — learns the balance of what you play and pulls
+     outliers toward it, so masters stop jumping at each other on shuffle
+- ✅ Queue is the engine's own: add, play next, drag to reorder, remove
+- ✅ Playlists, and importing a library from Spotify, Apple Music and others
+- ✅ Time-synced lyrics
+- ✅ Downloads to the music folder
+- ✅ Catalogue and streaming backends configurable at runtime
+
+### Phase 4: Next
+- [ ] Bundle a Python runtime so installers are fully self-contained
+- [ ] Persist the queue across restarts
+- [ ] Historical mood analytics; playlists generated from mood arcs
+- [ ] Offline playback from downloaded files
 - [ ] Multi-user support
 
 ---

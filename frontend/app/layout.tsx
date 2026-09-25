@@ -9,12 +9,22 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
+  /* Draw under the notch / status bar so the shell owns the full screen. */
   viewportFit: "cover",
+  themeColor: "#000000",
 };
 
 export const metadata: Metadata = {
-  title: "AuralFlow — AI-Powered Music Player",
-  description: "An intelligent music player that curates songs in real time based on your mood and emotional flow.",
+  title: "AuralFlow",
+  description:
+    "A lossless music player with a reinforcement-learning DJ that curates tracks from your mood and emotional flow.",
+  applicationName: "AuralFlow",
+  appleWebApp: {
+    capable: true,
+    title: "AuralFlow",
+    statusBarStyle: "black-translucent",
+  },
+  formatDetection: { telephone: false, address: false, email: false },
 };
 
 export default function RootLayout({
@@ -23,10 +33,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={inter.variable}>
-      <body className="antialiased font-sans">
-        {children}
-      </body>
+    <html lang="en" className={inter.variable} style={{ colorScheme: "dark" }}>
+      <body className="antialiased font-sans">{children}</body>
     </html>
   );
 }

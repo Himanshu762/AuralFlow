@@ -1,0 +1,22 @@
+{
+  "name": "auralflow-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tauri shell for AuralFlow \u2014 desktop and mobile",
+  "scripts": {
+    "dev": "npm run prepare:engine && npm run prepare:ui && node scripts/tauri.mjs dev",
+    "build": "npm run prepare:engine && npm run prepare:ui && node scripts/tauri.mjs build",
+    "prepare:engine": "node scripts/prepare.mjs engine",
+    "prepare:ui": "node scripts/prepare.mjs ui",
+    "android:init": "tauri android init",
+    "android:dev": "tauri android dev",
+    "android:build": "tauri android build",
+    "ios:init": "tauri ios init",
+    "ios:dev": "tauri ios dev",
+    "ios:build": "tauri ios build",
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

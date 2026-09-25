@@ -127,3 +127,14 @@ async def compute_mood(track: MoodRequest):
         "mood_vector": result["mood_vector"],
         "mood_label": result["mood_label"],
     }
+
+
+@router.get("/stats")
+async def agent_stats():
+    """
+    Current training status of the RL agent.
+
+    The desktop sidebar polls this to show exploration rate, replay-buffer
+    size and how many gradient steps the agent has taken this session.
+    """
+    return recommendation_service.stats()

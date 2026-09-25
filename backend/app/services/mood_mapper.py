@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Tuple
 
 # 5D Mood Vector: [energy, valence, danceability, acousticness, instrumentalness]
 
@@ -34,20 +34,33 @@ GENRE_MOOD_MAP = {
 
 DEFAULT_MOOD = [0.5, 0.5, 0.5, 0.5, 0.5]
 
-def get_mood_vector(genre: str) -> List[float]:
-    """Map a genre string to a 5D mood vector heuristically."""
+def resolve_mood(genre: str) -> Tuple[List[float], bool]:
+    """
+    Map a genre string to a 5D mood vector heuristically.
+
+    Returns the vector and whether it was actually derived from the genre.
+    That second value matters: a track we know nothing about falls back to the
+    neutral centre of the space, which sits zero distance from any listener
+    mood and would otherwise be reported as a perfect match. Callers use the
+    flag to say "no reading" instead of inventing a confident one.
+    """
     if not genre:
-        return DEFAULT_MOOD
-    
+        return DEFAULT_MOOD, False
+
     genre_lower = genre.lower().strip()
-    
+
     # Exact match
     if genre_lower in GENRE_MOOD_MAP:
-        return GENRE_MOOD_MAP[genre_lower]
-        
+        return GENRE_MOOD_MAP[genre_lower], True
+
     # Partial match
     for key, vector in GENRE_MOOD_MAP.items():
         if key in genre_lower:
-            return vector
-            
-    return DEFAULT_MOOD
+            return vector, True
+
+    return DEFAULT_MOOD, False
+
+
+def get_mood_vector(genre: str) -> List[float]:
+    """The vector alone, for callers that do not care how it was arrived at."""
+    return resolve_mood(genre)[0]
