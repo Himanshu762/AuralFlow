@@ -11,9 +11,9 @@ directly through /recommendations. They are here for session-level analytics.
 
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
-from typing import List, Dict, Optional
+from typing import List
 from pydantic import BaseModel
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.db.base import get_db
 from app.models.session import Session as ListeningSession
@@ -113,7 +113,7 @@ async def end_session(
             raise HTTPException(status_code=404, detail="Session not found")
 
         # Update session
-        session.ended_at = datetime.utcnow()
+        session.ended_at = datetime.now(timezone.utc)
         session.mood_end = session_data.mood_end
         session.mood_trajectory = session_data.mood_trajectory
         session.total_songs_played = session_data.total_songs_played
@@ -123,10 +123,16 @@ async def end_session(
 
         db.commit()
 
+        started = session.started_at
+        if started is not None and started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        duration_minutes = (
+            (session.ended_at - started).total_seconds() / 60 if started is not None else 0.0
+        )
+
         # Update user statistics
         user = db.query(User).filter(User.id == user_id).first()
         if user:
-            duration_minutes = (session.ended_at - session.started_at).total_seconds() / 60
             skip_rate = session.total_songs_skipped / max(session.total_songs_played, 1)
 
             # Update running averages

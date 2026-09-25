@@ -11,6 +11,7 @@ import { usePlayerStore, WAVEFORM_BUCKETS } from "../stores/playerStore";
 import { fmtTime, qualityBadge, streamCodec, pcmRate } from "../lib/format";
 import Rail from "./Rail";
 import LyricsPane from "./LyricsPane";
+import { moodProvenance } from "./MoodMeter";
 
 interface Props {
   compact: boolean;
@@ -47,6 +48,10 @@ export default function NowPlayingScreen({
   const openAlbum = usePlayerStore((s) => s.openAlbum);
   const monoReady = usePlayerStore((s) => s.monoReady);
   const streamInfo = usePlayerStore((s) => s.streamInfo);
+  const reading = usePlayerStore((s) => s.moodReading);
+  const deviceLabel = usePlayerStore((s) => s.signature?.device.label);
+  const corrected = usePlayerStore((s) => Boolean(s.signature?.device.correction));
+  const provenance = moodProvenance(reading);
 
   const [scrubTime, setScrubTime] = useState<number | null>(null);
   /* Lyrics take the place of the artwork rather than crowding beside it. */
@@ -256,8 +261,15 @@ export default function NowPlayingScreen({
           </span>
         )}
         {track.mood_label && (
-          <span className="px-3 py-1.5 rounded-full bg-primary-container/15 ring-1 ring-primary-container/40 text-[10px] font-bold uppercase tracking-wider text-primary">
+          <span
+            className="px-3 py-1.5 rounded-full bg-primary-container/15 ring-1 ring-primary-container/40 text-[10px] font-bold uppercase tracking-wider text-primary"
+            title={provenance.detail}
+          >
             {track.mood_label}
+            <span className={`font-mono font-normal normal-case tracking-normal opacity-80 ${provenance.tone}`}>
+              {" "}· {provenance.label}
+              {reading.source === "measured" ? ` ${Math.round(reading.confidence * 100)}%` : ""}
+            </span>
           </span>
         )}
       </div>
@@ -360,8 +372,10 @@ export default function NowPlayingScreen({
           onClick={() => setActiveTab("settings")}
           className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/8 backdrop-blur-md ring-1 ring-white/10 text-white/80 hover:text-white transition-colors active:scale-95"
         >
-          <Cast className={`w-3.5 h-3.5 ${monoReady ? "text-lossless" : "text-white/40"}`} />
-          <span className="text-[10px] font-bold uppercase tracking-[0.12em]">System Output</span>
+          <Cast className={`w-3.5 h-3.5 ${corrected ? "text-hi-res" : monoReady ? "text-lossless" : "text-white/40"}`} />
+          <span className="text-[10px] font-bold uppercase tracking-[0.12em] truncate max-w-[40vw]">
+            {deviceLabel || "System Output"}
+          </span>
         </button>
 
         <div className="flex items-center gap-1">

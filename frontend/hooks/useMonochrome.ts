@@ -10,7 +10,18 @@ import {
   type ArtistDetail,
   type PlayerState,
 } from "../stores/playerStore";
-import { scoreTracksAI, submitFeedback, computeMood } from "../lib/api";
+import {
+  scoreTracksAI,
+  submitFeedback,
+  computeMood,
+  upsertLibrary,
+  postFeatures,
+  postLibraryEvent,
+  djNext,
+  djReject,
+  type ListenerState,
+  type DjPick,
+} from "../lib/api";
 
 /* Point a phone or tablet at a Monochrome instance on the LAN by setting
    NEXT_PUBLIC_MONOCHROME_URL at build time; defaults to the local sidecar. */
@@ -85,12 +96,152 @@ export function useMonochrome() {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const playStartRef = useRef<number>(0);
   const lastTrackRef = useRef<string | null>(null);
+  /* The listener's state at the moment the current track started. */
+  const stateAtStartRef = useRef<ListenerState | null>(null);
 
   /* ---- Send a command to the engine ---- */
   const send = useCallback((type: string, payload: Record<string, unknown> = {}) => {
     if (!iframeRef.current?.contentWindow) return;
     iframeRef.current.contentWindow.postMessage({ type: `af:${type}`, ...payload }, "*");
   }, []);
+
+  /* ---- The DJ loop ----
+     Every track start: settle the previous track's feedback, read the new
+     track's mood, ask the DJ what should follow, and queue it. */
+  const askDj = useCallback(
+    async (current: Track | null) => {
+      const st = usePlayerStore.getState();
+      if (!st.settings.adaptiveDj) return null;
+      st.setDj({ deciding: true });
+      /* Playing from a list queues the whole list behind the track, so the
+         queue is not something the DJ chose. Only what is about to play is
+         kept out of the running; the pick goes in ahead of the rest. */
+      const exclude = [
+        ...st.recentlyPlayed.slice(0, 15).map((t) => t.id),
+        ...st.dj.rejected,
+        ...st.queue.slice(st.queueIndex + 1, st.queueIndex + 3).map((t) => t.id),
+      ];
+      const res = await djNext({
+        currentMood: st.currentMood,
+        recentMoods: st.recentMoods,
+        mode: st.settings.flowMode,
+        customTarget: st.settings.flowMode === "custom" ? st.settings.flowTarget : null,
+        position: st.dj.position,
+        horizon: st.settings.flowHorizon,
+        currentTrack: current,
+        excludeIds: exclude,
+      });
+      const after = usePlayerStore.getState();
+      if (!res) {
+        after.setDj({ deciding: false });
+        return null;
+      }
+      after.setDj({
+        deciding: false,
+        pick: res.pick,
+        alternates: res.alternates,
+        reason: res.reason,
+        target: res.target,
+        poolSize: res.pool_size,
+        exploring: res.exploring,
+        policyWeight: res.policy_weight,
+        library: res.library,
+      });
+      return res;
+    },
+    []
+  );
+
+  const queuePick = useCallback(
+    (pick: DjPick, forTrack: string | null) => {
+      const st = usePlayerStore.getState();
+      if (st.dj.queuedForTrack === forTrack && forTrack !== null) return;
+      send("queueadd", { tracks: [pick], next: true });
+      st.setDj({ queuedForTrack: forTrack });
+    },
+    [send]
+  );
+
+  const onTrackStarted = useCallback(
+    async (track: Track, previousId: string | null, previousStart: number, previousState: ListenerState | null) => {
+      /* 1. The new track's mood, from the best source the library has. */
+      const mood = await computeMood({
+        id: track.id,
+        title: track.title,
+        artist: track.artist,
+        genre: track.genre,
+      }).catch(() => null);
+
+      const st = usePlayerStore.getState();
+      if (st.track?.id !== track.id) return; // moved on already
+
+      if (mood) {
+        usePlayerStore.setState((prev) => ({
+          track: prev.track
+            ? {
+                ...prev.track,
+                mood_vector: mood.mood_vector,
+                mood_label: mood.mood_label,
+                mood_source: mood.mood_source,
+                mood_confidence: mood.mood_confidence,
+              }
+            : null,
+        }));
+        st.addRecentMood(mood.mood_vector);
+        st.setCurrentMood(mood.mood_vector);
+        st.setMoodReading({
+          trackId: track.id,
+          source: mood.mood_source,
+          confidence: mood.mood_confidence,
+          measured: mood.measured,
+        });
+      }
+
+      const now = usePlayerStore.getState();
+      const nextState: ListenerState = {
+        currentMood: now.currentMood,
+        recentMoods: now.recentMoods,
+        targetMood: now.dj.target,
+      };
+
+      /* 2. How the previous track was received, now that we know what
+            followed it. Adaptive Flow off stops new signals reaching the agent. */
+      if (now.settings.adaptiveDj && previousId && previousId !== track.id && previousState) {
+        const elapsed = Date.now() - previousStart;
+        const prev = now.recentlyPlayed.find((t) => t.id === previousId);
+        if (prev) {
+          const totalMs = (prev.duration || 180) * 1000;
+          submitFeedback({
+            trackId: prev.id,
+            moodVector: prev.mood_vector || [0.5, 0.5, 0.5, 0.5, 0.5],
+            state: previousState,
+            nextState,
+            nextMoodVector: mood?.mood_vector ?? null,
+            wasPlayedFully: elapsed > totalMs * 0.8,
+            wasSkipped: elapsed < totalMs * 0.2,
+            wasLiked: now.liked.has(prev.id),
+            wasReplayed: false,
+            playDurationMs: elapsed,
+            totalDurationMs: totalMs,
+          }).catch(() => {});
+        }
+      }
+      stateAtStartRef.current = nextState;
+
+      /* 3. A custom arc advances one step per track. */
+      if (now.settings.flowMode === "custom") {
+        now.setDj({ position: Math.min(now.settings.flowHorizon, now.dj.position + 1) });
+      }
+
+      /* 4. What comes next — and put it in the queue. */
+      const res = await askDj(track);
+      const latest = usePlayerStore.getState();
+      if (res?.pick && latest.track?.id === track.id && latest.settings.autoQueue && latest.settings.adaptiveDj) {
+        queuePick(res.pick, track.id);
+      }
+    },
+    [askDj, queuePick]
+  );
 
   /* ---- Engine events ---- */
   useEffect(() => {
@@ -111,6 +262,10 @@ export function useMonochrome() {
             send("playbackconfig", { baseUrl: PLAYBACK_API_BASE, token: PLAYBACK_API_TOKEN });
           }
           send("getstate");
+          /* The equaliser state carries the Sound Signature; the device list
+             says what is playing the sound. */
+          send("eqstate");
+          send("devices", { requestLabels: false });
           break;
 
         case "playbackconfig":
@@ -144,60 +299,46 @@ export function useMonochrome() {
         case "trackloaded": {
           const track = data.track as Track | null;
           if (!track) break;
+          /* The 400 ms poll and loadedmetadata can both announce the same
+             track; only the first arrival is a track change. */
+          if (lastTrackRef.current === track.id) {
+            usePlayerStore.setState({
+              duration: data.duration || 0,
+              streamInfo: (data.streamInfo as StreamInfo) ?? null,
+            });
+            break;
+          }
+
+          const previousId = lastTrackRef.current;
+          const previousStart = playStartRef.current;
+          /* The listener's state when the previous track started, captured
+             then so the feedback describes that moment and not this one. */
+          const previousState = stateAtStartRef.current;
 
           usePlayerStore.setState({
             track,
             duration: data.duration || 0,
             streamInfo: (data.streamInfo as StreamInfo) ?? null,
+            moodReading: {
+              trackId: track.id,
+              source: track.mood_source ?? "unknown",
+              confidence: track.mood_confidence ?? 0,
+              seconds: 0,
+              measured: null,
+              live: false,
+            },
           });
-          /* A new track means a fresh envelope to measure. */
           s.resetWaveform();
           s.addToRecentlyPlayed(track);
-
-          /* Report how the previous track was received, so the agent learns.
-             Adaptive Flow off stops new signals reaching it. */
-          if (s.settings.adaptiveDj && lastTrackRef.current && lastTrackRef.current !== track.id) {
-            const elapsed = Date.now() - playStartRef.current;
-            const prev = s.recentlyPlayed.find((t) => t.id === lastTrackRef.current);
-            if (prev) {
-              const totalMs = (prev.duration || 180) * 1000;
-              submitFeedback({
-                trackId: prev.id,
-                moodVector: prev.mood_vector || [0.5, 0.5, 0.5, 0.5, 0.5],
-                currentMood: s.currentMood,
-                recentMoods: s.recentMoods,
-                wasPlayedFully: elapsed > totalMs * 0.8,
-                wasSkipped: elapsed < totalMs * 0.2,
-                wasLiked: s.liked.has(prev.id),
-                wasReplayed: false,
-                playDurationMs: elapsed,
-                totalDurationMs: totalMs,
-              }).catch(() => {});
-            }
-          }
-
           playStartRef.current = Date.now();
           lastTrackRef.current = track.id;
 
-          /* Map the new track into the 5-D mood space. */
-          computeMood({
-            id: track.id,
-            title: track.title,
-            artist: track.artist,
-            genre: track.genre,
-          })
-            .then((result) => {
-              if (!result) return;
-              usePlayerStore.setState((prev) => ({
-                track: prev.track
-                  ? { ...prev.track, mood_vector: result.mood_vector, mood_label: result.mood_label }
-                  : null,
-              }));
-              const st = usePlayerStore.getState();
-              st.addRecentMood(result.mood_vector);
-              st.setCurrentMood(result.mood_vector);
-            })
+          /* Into the library, and counted as a play. */
+          upsertLibrary([track], "play")
+            .then(() => postLibraryEvent(track.id, "play"))
             .catch(() => {});
+
+          void onTrackStarted(track, previousId, previousStart, previousState);
           break;
         }
 
@@ -220,7 +361,8 @@ export function useMonochrome() {
           usePlayerStore.setState({ searchResults: results, searching: false });
 
           if (results.length > 0) {
-            scoreTracksAI(results, s.currentMood, s.recentMoods)
+            upsertLibrary(results, "search").catch(() => {});
+            scoreTracksAI(results, s.currentMood, s.recentMoods, s.dj.target)
               .then((scored) => {
                 if (scored.recommendations.length === 0) return;
                 /* Mood affinity, bounded 0..1. Absent when the track carried
@@ -268,6 +410,67 @@ export function useMonochrome() {
           break;
         }
 
+        case "features": {
+          /* What the engine has measured from the audio so far. Send it to
+             the library, and let the reading it returns replace whatever
+             the genre tag said. */
+          const trackId = String(data.trackId ?? "");
+          if (!trackId) break;
+          const { final, type: _t, trackId: _id, ...features } = data as Record<string, unknown> & { final?: boolean };
+          void _t;
+          void _id;
+          const seconds = Number(features.seconds) || 0;
+          if (usePlayerStore.getState().track?.id === trackId) {
+            s.setMoodReading({ trackId, seconds, live: !final });
+          }
+          postFeatures(trackId, seconds, features, Boolean(final))
+            .then((res) => {
+              if (!res || !res.stored) return;
+              const st = usePlayerStore.getState();
+              if (st.track?.id !== trackId) return;
+              st.setMoodReading({
+                trackId,
+                source: res.mood_source,
+                confidence: res.mood_confidence,
+                seconds,
+                measured: res.measured,
+                live: !final,
+              });
+              if (res.mood_source === "measured") {
+                usePlayerStore.setState((prev) => ({
+                  track: prev.track
+                    ? {
+                        ...prev.track,
+                        mood_vector: res.mood_vector,
+                        mood_label: res.mood_label,
+                        mood_source: res.mood_source,
+                        mood_confidence: res.mood_confidence,
+                      }
+                    : null,
+                  currentMood: res.mood_vector,
+                }));
+              }
+            })
+            .catch(() => {});
+          break;
+        }
+
+        case "devices":
+          usePlayerStore.getState().setDevices({
+            supported: Boolean(data.supported),
+            labelsAvailable: Boolean(data.labelsAvailable),
+            current: String(data.current ?? ""),
+            list: (data.devices || []) as PlayerState["devices"]["list"],
+          });
+          break;
+
+        case "signature": {
+          const { type: _type, ...rest } = data as Record<string, unknown>;
+          void _type;
+          usePlayerStore.getState().setSignature(rest as unknown as NonNullable<PlayerState["signature"]>);
+          break;
+        }
+
         case "album":
           usePlayerStore.getState().setAlbumDetail({
             id: String(data.id ?? ""),
@@ -278,6 +481,7 @@ export function useMonochrome() {
             tracks: (data.tracks || []) as Track[],
             error: data.error ? String(data.error) : undefined,
           });
+          upsertLibrary((data.tracks || []) as Track[], "album").catch(() => {});
           break;
 
         case "artist":
@@ -289,6 +493,7 @@ export function useMonochrome() {
             albums: (data.albums || []) as ArtistDetail["albums"],
             error: data.error ? String(data.error) : undefined,
           });
+          upsertLibrary((data.tracks || []) as Track[], "artist").catch(() => {});
           break;
 
         case "download":
@@ -346,9 +551,12 @@ export function useMonochrome() {
           });
           break;
 
-        case "eqstate":
-          usePlayerStore.getState().setEq(data as unknown as EqState);
+        case "eqstate": {
+          const { signature, ...eq } = data as unknown as EqState & { signature?: PlayerState["signature"] };
+          usePlayerStore.getState().setEq(eq as EqState);
+          if (signature) usePlayerStore.getState().setSignature(signature);
           break;
+        }
 
         case "importprogress":
           usePlayerStore.getState().setImportState({
@@ -367,6 +575,7 @@ export function useMonochrome() {
           }
           const matched = (data.tracks || []) as Track[];
           const playlists = (data.playlists || []) as { name: string; tracks: Track[] }[];
+          upsertLibrary(matched, "import").catch(() => {});
           store.setImportState({
             running: false,
             done: true,
@@ -398,8 +607,20 @@ export function useMonochrome() {
     };
 
     window.addEventListener("message", handler);
-    return () => window.removeEventListener("message", handler);
-  }, [send]);
+
+    /* The engine announces itself once, when its player is up. If that
+       happened before this listener existed — a fast boot, a shell reload —
+       ask it to say so again, until it does. */
+    const hello = setInterval(() => {
+      if (usePlayerStore.getState().monoReady) return;
+      send("hello");
+    }, 1500);
+
+    return () => {
+      window.removeEventListener("message", handler);
+      clearInterval(hello);
+    };
+  }, [send, onTrackStarted]);
 
   /* ---- Public API ---- */
   /* Memoized so consumers can safely use it as an effect dependency. */
@@ -497,6 +718,56 @@ export function useMonochrome() {
         send("playoffline", { trackId, tracks }),
       /** Ask the engine for the current equaliser state. */
       getEqState: () => send("eqstate"),
+      /* ---- Output devices and the Sound Signature ---- */
+      getDevices: (requestLabels = false) => send("devices", { requestLabels }),
+      setDevice: (id: string) => send("setdevice", { id }),
+      /** Switch layers, name the device, pick or forget a correction. */
+      setSignature: (opts: {
+        enabled?: boolean;
+        loudness?: boolean;
+        autoDevice?: boolean;
+        deviceLabel?: string;
+        headphone?: PlayerState["autoEq"]["headphones"][number];
+        target?: string;
+        clearDevice?: boolean;
+      }) => send("signature", opts),
+      /* ---- The DJ ---- */
+      /** Ask the DJ again for what should follow the playing track. */
+      djRefresh: async () => {
+        const st = usePlayerStore.getState();
+        const res = await askDj(st.track);
+        const latest = usePlayerStore.getState();
+        if (res?.pick && latest.settings.autoQueue && latest.settings.adaptiveDj) {
+          queuePick(res.pick, latest.track?.id ?? null);
+        }
+      },
+      /** Play the DJ's pick right now. */
+      djPlayPick: () => {
+        const st = usePlayerStore.getState();
+        if (!st.dj.pick) return;
+        send("play", { trackId: st.dj.pick.id, tracks: [st.dj.pick], searchQuery: "" });
+      },
+      /** Turn the pick down: a negative signal, then a fresh pick. */
+      djReject: async () => {
+        const st = usePlayerStore.getState();
+        const pick = st.dj.pick;
+        if (!pick) return;
+        st.rejectPickLocally(pick.id);
+        /* If it was already queued behind the current track, pull it. */
+        const idx = st.queue.findIndex((t, i) => i > st.queueIndex && t.id === pick.id);
+        if (idx >= 0) send("queueremove", { index: idx });
+        st.setDj({ pick: null, queuedForTrack: null, reason: "Choosing another…" });
+        await djReject(pick.id, pick.mood_vector, {
+          currentMood: st.currentMood,
+          recentMoods: st.recentMoods,
+          targetMood: st.dj.target,
+        }).catch(() => {});
+        const res = await askDj(usePlayerStore.getState().track);
+        const latest = usePlayerStore.getState();
+        if (res?.pick && latest.settings.autoQueue && latest.settings.adaptiveDj) {
+          queuePick(res.pick, latest.track?.id ?? null);
+        }
+      },
       /** Switch the equaliser chain on or off. */
       setEqEnabled: (enabled: boolean) => send("eq", { enabled }),
       /** Set the whole curve. Doing this by hand stops the stabiliser. */
@@ -534,6 +805,6 @@ export function useMonochrome() {
         send("import", { text, format });
       },
     }),
-    [send]
+    [send, askDj, queuePick]
   );
 }

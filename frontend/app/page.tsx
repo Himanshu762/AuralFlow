@@ -145,6 +145,37 @@ export default function Home() {
 
   const dolbyAtmos = usePlayerStore((s) => s.settings.dolbyAtmos);
 
+  /* A new arc means a new target: start the custom arc over and ask the DJ
+     again for what should follow the playing track. */
+  const flowMode = usePlayerStore((s) => s.settings.flowMode);
+  const flowTarget = usePlayerStore((s) => s.settings.flowTarget);
+  const flowHorizon = usePlayerStore((s) => s.settings.flowHorizon);
+  const flowMounted = useRef(false);
+  useEffect(() => {
+    if (!flowMounted.current) {
+      flowMounted.current = true;
+      return;
+    }
+    usePlayerStore.getState().setDj({ position: 0, queuedForTrack: null });
+    if (usePlayerStore.getState().track) void mono.djRefresh();
+  }, [flowMode, flowTarget, flowHorizon, mono]);
+
+  const djControls = useMemo(
+    () => ({
+      playPick: mono.djPlayPick,
+      reject: () => void mono.djReject(),
+      refresh: () => void mono.djRefresh(),
+      queuePick: () => {
+        const st = usePlayerStore.getState();
+        if (st.dj.pick) {
+          mono.queueAdd([st.dj.pick], true);
+          st.setDj({ queuedForTrack: st.track?.id ?? null });
+        }
+      },
+    }),
+    [mono]
+  );
+
   useEffect(() => {
     if (!monoReady) return;
     mono.setPreferAtmos(dolbyAtmos);
@@ -179,10 +210,25 @@ export default function Home() {
 
   const searchInputRef = useRef<HTMLInputElement>(null);
 
+  /* The Search tab mounts after the previous tab's exit animation, so the
+     input is not there on the next frame. Keep trying for a moment. */
+  const focusSearchInput = useCallback(() => {
+    const started = Date.now();
+    const attempt = () => {
+      const el = searchInputRef.current;
+      if (el) {
+        el.focus();
+        return;
+      }
+      if (Date.now() - started < 800) requestAnimationFrame(attempt);
+    };
+    requestAnimationFrame(attempt);
+  }, []);
+
   const focusSearch = useCallback(() => {
     setActiveTab("search");
-    requestAnimationFrame(() => searchInputRef.current?.focus());
-  }, [setActiveTab]);
+    focusSearchInput();
+  }, [setActiveTab, focusSearchInput]);
 
   const shortcutHandlers = useMemo(
     () => ({
@@ -192,9 +238,9 @@ export default function Home() {
       seek: mono.seek,
       volume: mono.volume,
       setMuted: mono.setMuted,
-      focusSearch: () => searchInputRef.current?.focus(),
+      focusSearch: focusSearchInput,
     }),
-    [mono]
+    [mono, focusSearchInput]
   );
   useKeyboardShortcuts(shortcutHandlers);
 
@@ -255,7 +301,7 @@ export default function Home() {
         )}
         {!detail && (
           <>
-        {activeTab === "home" && <HomeTab onPlay={playTrack} compact={compact} />}
+        {activeTab === "home" && <HomeTab onPlay={playTrack} compact={compact} dj={djControls} />}
         {activeTab === "search" && (
           <SearchTab onSearch={mono.search} onPlay={playTrack} inputRef={searchInputRef} compact={compact} />
         )}
@@ -273,6 +319,7 @@ export default function Home() {
             onPlay={playTrack}
             onToggle={mono.toggle}
             compact={compact}
+            dj={djControls}
             queue={{
               get: mono.getQueue,
               add: mono.queueAdd,
@@ -289,6 +336,12 @@ export default function Home() {
             compact={compact}
             onPlaybackConfig={mono.setPlaybackConfig}
             onInstances={mono.instances}
+            dj={djControls}
+            sound={{
+              getDevices: mono.getDevices,
+              setDevice: mono.setDevice,
+              setSignature: mono.setSignature,
+            }}
             eq={{
               getState: mono.getEqState,
               setEnabled: mono.setEqEnabled,
@@ -397,7 +450,7 @@ export default function Home() {
               transition={{ type: "spring", stiffness: 260, damping: 30 }}
               className="relative z-10 overflow-hidden flex-shrink-0"
             >
-              <AudioEngineRail onPlay={playTrack} />
+              <AudioEngineRail onPlay={playTrack} dj={djControls} />
             </motion.div>
           )}
         </AnimatePresence>

@@ -1,16 +1,11 @@
 # Web Framework
 fastapi==0.115.5
 uvicorn[standard]==0.32.1
-python-multipart==0.0.18
 python-dotenv==1.0.1
 
-# Database (Supabase PostgreSQL)
-psycopg2-binary==2.9.10
+# Database (local SQLite by default; any SQLAlchemy URL via DATABASE_URL)
 sqlalchemy==2.0.36
 alembic==1.14.0
-
-# HTTP Client
-requests==2.32.3
 
 # Machine Learning & Data Science
 #
@@ -25,13 +20,14 @@ requests==2.32.3
 torch==2.9.0
 numpy==2.2.0
 
-# Authentication
-pyjwt==2.10.1
-passlib[bcrypt]==1.7.4
-
-# CORS & Security
+# Authentication (local single-user token)
 python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
 
 # Utilities
 pydantic==2.10.3
 pydantic-settings==2.6.1
+
+# Tests
+pytest==8.3.4
+httpx==0.28.1

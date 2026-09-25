@@ -1,17 +1,18 @@
 # 🎧 AuralFlow: AI-Powered Smart Music Player
 
-> An intelligent music player that automatically curates and transitions songs in real time based on your mood, listening behavior, and emotional flow. Streams high-quality FLAC audio for free via **[Monochrome](https://github.com/monochrome-music/monochrome)**.
+> A lossless music player with a DJ that listens. It measures every track's mood from the audio as it plays, chooses what follows from your own library along an arc you set, and queues it — and it shapes the sound for whatever is playing it. Streams FLAC via **[Monochrome](https://github.com/monochrome-music/monochrome)**.
 
-## 🌟 What Makes AuralFlow Special
+## 🌟 What Makes AuralFlow Different
 
-AuralFlow isn't just another music player — it's your **AI DJ** that understands:
-- Your emotional listening patterns, not just genres
-- How your mood evolves during a session
-- The perfect next song to match your flow
+Most players give you a library and a shuffle button. AuralFlow gives you a **Flow**:
 
-Example flow: `Avicii → Metallica → Sajda → Phonk remix → A.R. Rahman → Lo-fi chill`
+- **It listens.** While a track plays, the engine measures it — loudness, dynamics, brightness, tempo, key and mode, how much of the energy is a voice — and turns that into a five-dimensional mood. No genre tag, no third-party feature API. The reading is labelled with how much audio it rests on.
+- **It has a library of its own.** Everything you search, play, import or look up becomes a candidate. The DJ chooses from that, not from whatever you last typed.
+- **It follows an arc.** Hold, drift, lift, settle, focus, or draw your own target. The next pick is chosen for where the session is going, ranked by a reinforcement-learning policy that learns from plays, skips, likes and every "not this one" — and it goes straight into the queue.
+- **It tells you why.** Every pick comes with its reason, its fit to the target, and where its mood reading came from. Exploration is labelled as discovery, not passed off as confidence.
+- **It sounds right on any device.** One *Sound Signature* stacks a correction for the output device (matched from AutoEQ by the device's name and remembered per device), a live stabiliser for the record playing now, and loudness compensation that grows as the volume comes down — all on top of your own EQ, all reversible.
 
-AuralFlow sees this as a **coherent emotional arc**, not random genre-hopping.
+Example flow: `Avicii → Metallica → Sajda → Phonk remix → A.R. Rahman → Lo-fi chill` is a **coherent emotional arc** to AuralFlow, not genre-hopping.
 
 ---
 
@@ -52,13 +53,18 @@ itself and shuts them down with the window.
                                ▼
 ┌──────────────────────────────────────────────────────────────┐
 │  FastAPI backend                                             │
-│  /recommendations/score     rank candidates with the agent   │
-│  /recommendations/feedback  train on plays, skips, likes     │
-│  /recommendations/mood      genre → 5-D mood vector          │
-│  /recommendations/stats     exploration rate, buffer, steps  │
-│  SQLite by default; PyTorch DQN in ml/agents                 │
+│  /library          the candidate pool: tracks, measured      │
+│                    moods, plays, likes                        │
+│  /dj/next          what plays next, along the session arc    │
+│  /recommendations  rank a list · feedback · one track's mood │
+│  SQLite by default; PyTorch Q-network in ml/agents           │
 └──────────────────────────────────────────────────────────────┘
 ```
+
+The engine bridge (`engine/auralflow-bridge.js`) is where the listening
+happens: it reads the engine's analyser while audio plays, reports measured
+features to the shell, composes the Sound Signature layers onto the running
+EQ filters, and tracks the output device.
 
 ### Layouts
 
@@ -160,13 +166,13 @@ can via `NEXT_PUBLIC_MONOCHROME_URL` and `NEXT_PUBLIC_API_BASE`
 AuralFlow/
 ├── backend/                    # FastAPI backend
 │   └── app/
-│       ├── api/endpoints/      # auth, sessions, recommendations
+│       ├── api/endpoints/      # library, dj, recommendations, sessions, auth
 │       ├── core/               # config & security
-│       ├── db/                 # SQLAlchemy session + base
-│       ├── models/             # User, Song, Session, Transition
-│       └── services/           # mood mapping, track + recommendation services
+│       ├── db/                 # SQLAlchemy session + schema upkeep
+│       ├── models/             # Song (the library), User, Session, Transition
+│       └── services/           # feature → mood mapping, library, dj, recommendation
 ├── ml/
-│   └── agents/music_rl_agent.py   # PyTorch DQN over a 5-D mood space
+│   └── agents/music_rl_agent.py   # PyTorch Q-network over mood + arc target
 ├── frontend/                   # Next.js UI (static export)
 │   ├── app/                    # shell, layout, design tokens
 │   ├── components/
@@ -179,7 +185,10 @@ AuralFlow/
 │   │   ├── NowPlayingScreen.tsx
 │   │   ├── TrackRow.tsx        # container-query track row
 │   │   ├── Rail.tsx            # shared seek / volume slider
-│   │   ├── Equalizer.tsx       # bands + the adaptive stabiliser
+│   │   ├── Equalizer.tsx       # the listener's own bands
+│   │   ├── FlowCard.tsx        # the DJ: arcs, next pick, reasons, rejection
+│   │   ├── MoodMeter.tsx       # the mood reading and its provenance
+│   │   ├── SoundSignature.tsx  # output device, correction, stabiliser, loudness layers
 │   │   ├── ImportPanel.tsx     # bring a library across from another service
 │   │   ├── LyricsPane.tsx      # synced lyrics
 │   │   └── *Tab.tsx            # Home, Search, Library, Queue, Settings
@@ -190,8 +199,9 @@ AuralFlow/
 │   ├── lib/                    # API client + formatting/quality helpers
 │   └── stores/playerStore.ts   # Zustand app state
 ├── engine/                     # our additions to the vendored audio engine
-│   ├── auralflow-bridge.js     # the whole integration, grafted on at build
+│   ├── auralflow-bridge.js     # the whole integration: protocol, analysis, signature, devices
 │   ├── patches/                # small edits to engine source
+│   ├── test/selftest.mjs       # synthetic-audio check of the analyser and EQ layers
 │   └── apply.mjs               # puts both back after a re-vendor
 ├── desktop/                    # Tauri shell
 │   └── src-tauri/
@@ -205,31 +215,45 @@ AuralFlow/
 
 ## 🧠 How It Works
 
-### 1. Mood Vector Computation
-Every song is represented as a **5D mood vector** derived from its genre metadata:
-```python
-[energy, valence, danceability, acousticness, instrumentalness]
-```
+### 1. Mood, measured
+Every track is a **5-D mood vector** — `[energy, valence, danceability,
+acousticness, instrumentalness]` — read from the audio as it plays. The
+bridge measures loudness, crest factor, dynamic range, spectral centroid and
+flatness, spectral flux, band energy ratios, tempo and beat strength, key and
+major/minor. The backend maps those onto the five dimensions and caches the
+result per track, with a confidence that grows with the seconds heard. Until a
+track has been heard, its mood comes from an artist prior (other measured
+tracks by the same artist) or its genre tag, and the UI says which.
 
-Example:
-- `EDM / Dance`: `[0.9, 0.7, 0.9, 0.1, 0.1]` → "Energetic & Uplifting"
-- `Lo-fi chill`: `[0.2, 0.6, 0.4, 0.8, 0.7]` → "Calm & Peaceful"
+### 2. The arc
+A session has a direction. **Hold** keeps the mood; **Drift** follows the
+momentum of the last few tracks; **Lift** raises energy and brightness a step
+a track; **Settle** winds down toward acoustic, instrumental material;
+**Focus** heads for mid-energy instrumental and stays; **Custom** heads for a
+vector you set over a number of tracks. The arc turns the current mood into a
+target for the next track.
 
-### 2. Mood Flow Tracking
-As you listen, AuralFlow tracks:
-- Your **current mood state**
-- **Recent mood trajectory** (last 5-10 songs)
-- **Listening patterns** (time of day, skip behavior, etc.)
+### 3. The pick
+The DJ ranks the library against that target: the policy's Q-value blended
+with mood fit, with terms for novelty, likes, past reward, recency and artist
+diversity. The policy's share grows as it trains, so early sessions lean on
+the arc and later ones on what it has learnt. Some picks are exploration —
+preferably tracks that have never been measured — and they are labelled as
+discoveries. The pick is queued behind the playing track automatically.
 
-### 3. Reinforcement Learning
-The RL agent learns from your behavior:
+### 4. Learning
+**Rewards:** +1 liked or replayed · +0.5 played fully · +0.2..0.5 partial ·
+−0.3 skipped mid-song · −1 skipped early · −0.5 rejected before it played.
+Feedback carries the *next* state and the next track's mood, so the update
+bootstraps from the transition you actually took.
 
-**Rewards:**
-- **+1.0**: Liked or replayed a song
-- **+0.5**: Played fully (>80%)
-- **-1.0**: Skipped early (<20%)
-
-**Policy:** The neural network learns to predict which songs you'll enjoy based on your current mood state.
+### 5. Sound Signature
+Three automatic EQ layers on top of your own curve: a **device** correction
+matched from AutoEQ by the output device's name (or chosen by hand) and
+remembered per device; a **track** stabiliser measured live that pulls each
+record toward the balance of what you normally play; and **loudness**
+compensation that adds back bass and a little treble as the volume drops. The
+settings screen draws all four layers and the total the filters are running.
 
 ---
 
@@ -239,10 +263,22 @@ The RL agent learns from your behavior:
 - `GET /api/v1/auth/login` - Local auto-login
 - `GET /api/v1/auth/me` - Get current user
 
+### Library
+- `POST /api/v1/library/tracks` - Add or refresh tracks in the candidate pool
+- `POST /api/v1/library/features` - Store what the engine measured from a track's audio
+- `POST /api/v1/library/event` - Record a play, like or unlike
+- `GET /api/v1/library/pool` - The pool with moods, provenance and history
+- `GET /api/v1/library/stats` - Counts by mood source
+
+### DJ
+- `POST /api/v1/dj/next` - What plays next, along the arc, with the reason
+- `POST /api/v1/dj/reject` - A pick turned down before it played
+- `GET /api/v1/dj/modes` - The arcs, policy weight and exploration rate
+
 ### Recommendations
-- `POST /api/v1/recommendations/score` - Score and rank candidate tracks
-- `POST /api/v1/recommendations/feedback` - Submit listening feedback
-- `POST /api/v1/recommendations/mood` - Compute mood vector for a track
+- `POST /api/v1/recommendations/score` - Score and rank a list the shell hands over
+- `POST /api/v1/recommendations/feedback` - Listening feedback, with the next state
+- `POST /api/v1/recommendations/mood` - One track's mood, its source and confidence
 - `GET /api/v1/recommendations/stats` - Agent status: exploration rate, replay-buffer size, training steps
 
 ### Sessions
@@ -283,11 +319,19 @@ The RL agent learns from your behavior:
 - ✅ Downloads to the music folder
 - ✅ Catalogue and streaming backends configurable at runtime
 
-### Phase 4: Next
+### Phase 4: The DJ that listens ✅
+- ✅ Mood measured from the audio (tempo, key/mode, loudness, dynamics, brightness, vocal band), cached per track with confidence
+- ✅ A library the DJ owns: searches, plays, imports, album and artist lookups, likes and history
+- ✅ Session arcs (hold, drift, lift, settle, focus, custom) and a closed loop: pick → queue next → feedback with the real next transition
+- ✅ Every pick explained; exploration labelled as discovery; "not this" as a signal
+- ✅ Sound Signature: per-device AutoEQ correction matched by device name, track stabiliser, loudness compensation — layered on the listener's EQ
+- ✅ Output device detection and switching where the platform allows
+
+### Phase 5: Next
 - [ ] Bundle a Python runtime so installers are fully self-contained
 - [ ] Persist the queue across restarts
-- [ ] Historical mood analytics; playlists generated from mood arcs
-- [ ] Offline playback from downloaded files
+- [ ] Pre-listen analysis of unheard tracks (decode ahead, off the main graph)
+- [ ] Mood history and arcs replayed as playlists
 - [ ] Multi-user support
 
 ---

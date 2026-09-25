@@ -15,8 +15,8 @@ load_dotenv()
 config = context.config
 
 # Override sqlalchemy.url from environment
-if os.getenv("DATABASE_URL"):
-    config.set_main_option("sqlalchemy.url", os.getenv("DATABASE_URL"))
+from app.core.config import settings  # noqa: E402
+config.set_main_option("sqlalchemy.url", settings.effective_database_url)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
@@ -26,7 +26,10 @@ if config.config_file_name is not None:
 # add your model's MetaData object here
 # for 'autogenerate' support
 import sys
-sys.path.append('/Users/anonymouse/AuralFlow/backend')
+_backend = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+for _p in (_backend, os.path.dirname(_backend)):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 from app.db.base import Base
 from app.models import User, Song, Session, Transition
 target_metadata = Base.metadata

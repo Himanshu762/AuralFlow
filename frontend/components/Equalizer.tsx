@@ -1,27 +1,20 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
-import { SlidersHorizontal, Gauge, RotateCcw, Headphones, Search, Check } from "lucide-react";
-import { usePlayerStore, type PlayerState } from "../stores/playerStore";
-
-type AutoEqHeadphone = PlayerState["autoEq"]["headphones"][number];
+import React, { useEffect, useRef } from "react";
+import { SlidersHorizontal, Gauge, RotateCcw } from "lucide-react";
+import { usePlayerStore } from "../stores/playerStore";
 
 /**
- * The equaliser, and the adaptive layer that drives it.
+ * The equaliser the listener sets by hand.
  *
- * Two ways to use it. Set the bands by hand, or leave the stabiliser on and
- * let it hold the balance steady for you — it learns the balance of what the
- * listener normally plays and pulls outliers toward it, which is what stops a
- * dull master and a bright one from jumping at each other on shuffle.
- * Touching a band by hand takes the stabiliser off, since both drive the same
- * filters.
+ * It is the base layer of the Sound Signature: the device correction, the
+ * track stabiliser and loudness compensation stack on top of it, and the
+ * total the filters are actually running is shown against each band.
  */
 
 interface Props {
   onGetState: () => void;
   onGetPresets: () => void;
-  onSearchHeadphones: (query?: string) => void;
-  onApplyAutoEq: (headphone: AutoEqHeadphone, target: string) => void;
   onSetEnabled: (enabled: boolean) => void;
   onSetGains: (gains: number[]) => void;
   onSetPreamp: (db: number) => void;
@@ -39,8 +32,6 @@ const RANGE = 12; /* dB shown above and below centre */
 export default function Equalizer({
   onGetState,
   onGetPresets,
-  onSearchHeadphones,
-  onApplyAutoEq,
   onSetEnabled,
   onSetGains,
   onSetPreamp,
@@ -67,11 +58,8 @@ export default function Equalizer({
   }, [eq.adaptive.on, onGetState]);
 
   const presets = usePlayerStore((s) => s.eqPresets);
-  const [query, setQuery] = useState("");
-  const [target, setTarget] = useState("");
-  const autoEq = usePlayerStore((s) => s.autoEq);
+  const composed = usePlayerStore((s) => s.signature?.composed ?? null);
   const bands = eq.frequencies.length;
-  const curve = eq.adaptive.curve;
 
   const setBand = (i: number, value: number) => {
     const next = [...eq.gains];
@@ -89,25 +77,20 @@ export default function Equalizer({
 
   return (
     <div className="flex flex-col gap-4">
-      {/* ---------------- Adaptive stabiliser ---------------- */}
+      {/* ---------------- Stabiliser fine-tuning ---------------- */}
+      {eq.adaptive.on && (
       <div className="rounded-2xl bg-surface-container p-5">
         <div className="flex items-start gap-3.5 mb-4">
           <span className="w-10 h-10 rounded-xl bg-primary-container/15 ring-1 ring-primary-container/30 flex items-center justify-center text-primary flex-shrink-0">
             <Gauge className="w-5 h-5" />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-[15px] font-semibold text-on-surface">Adaptive Stabiliser</p>
+            <p className="text-[15px] font-semibold text-on-surface">Track Stabiliser</p>
             <p className="text-[12px] text-outline leading-snug">
-              Learns the balance of what you normally play, then nudges records
-              that sit outside it back into line — so a dull master and a bright
-              one stop jumping at each other on shuffle.
+              How hard the stabiliser pulls a record toward the balance of what
+              you normally play, and which way to lean it.
             </p>
           </div>
-          <Toggle
-            checked={eq.adaptive.on}
-            onChange={(v) => onSetAdaptive({ enabled: v })}
-            label="Adaptive stabiliser"
-          />
         </div>
 
         {eq.adaptive.on && (
@@ -145,95 +128,7 @@ export default function Equalizer({
           </div>
         )}
       </div>
-
-      {/* ---------------- Headphone correction ---------------- */}
-      <div className="rounded-2xl bg-surface-container p-5">
-        <div className="flex items-start gap-3.5 mb-4">
-          <span className="w-10 h-10 rounded-xl bg-primary-container/15 ring-1 ring-primary-container/30 flex items-center justify-center text-primary flex-shrink-0">
-            <Headphones className="w-5 h-5" />
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="text-[15px] font-semibold text-on-surface">Headphone Correction</p>
-            <p className="text-[12px] text-outline leading-snug">
-              Measured responses from the AutoEQ database, turned into a curve that
-              flattens your headphones toward a reference target.
-            </p>
-          </div>
-        </div>
-
-        {autoEq.applied && (
-          <div className="flex items-center gap-2 mb-3.5 text-[12px] text-lossless">
-            <Check className="w-4 h-4 flex-shrink-0" />
-            <span className="truncate">
-              {autoEq.applied}
-              {autoEq.message && <span className="text-outline"> · {autoEq.message}</span>}
-            </span>
-          </div>
-        )}
-        {!autoEq.applied && autoEq.message && (
-          <p className="text-[12px] text-danger mb-3.5">{autoEq.message}</p>
-        )}
-
-        <div className="flex items-center gap-2 mb-3">
-          <div className="flex items-center gap-2 flex-1 min-w-0 px-3 py-2 rounded-xl bg-surface-high">
-            <Search className="w-3.5 h-3.5 text-outline flex-shrink-0" />
-            <input
-              type="search"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") onSearchHeadphones(query.trim());
-              }}
-              placeholder="Search headphones — e.g. HD 600"
-              aria-label="Search headphones"
-              className="flex-1 min-w-0 bg-transparent outline-none text-[13px] text-on-surface placeholder-outline"
-            />
-          </div>
-          <select
-            value={target}
-            onChange={(e) => setTarget(e.target.value)}
-            aria-label="Target curve"
-            className="px-2.5 py-2 rounded-xl bg-surface-high text-[12px] text-on-surface outline-none flex-shrink-0 max-w-[40%]"
-          >
-            {autoEq.targets.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {autoEq.searching ? (
-          <p className="text-[12px] text-outline">Searching…</p>
-        ) : autoEq.headphones.length === 0 ? (
-          <p className="text-[12px] text-outline">
-            No headphones loaded yet — search above, or press Enter for popular ones.
-          </p>
-        ) : (
-          <div className="max-h-56 overflow-y-auto scroll-area rounded-xl bg-surface-high/50 divide-y divide-white/5">
-            {autoEq.headphones.map((h) => (
-              <button
-                key={`${h.path}/${h.fileName}`}
-                type="button"
-                onClick={() => onApplyAutoEq(h, target || autoEq.targets[0]?.id)}
-                className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-surface-container transition-colors"
-              >
-                <span className="text-[12px] text-on-surface-variant truncate flex-1">{h.name}</span>
-                {h.type && (
-                  <span className="text-[10px] text-outline uppercase tracking-wider flex-shrink-0">
-                    {h.type}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-        )}
-
-        <p className="text-[11px] text-outline mt-3 leading-relaxed">
-          A correction is fixed for your hardware, so applying one switches the
-          adaptive stabiliser off — both drive the same filters.
-        </p>
-      </div>
+      )}
 
       {/* ---------------- Bands ---------------- */}
       <div className="rounded-2xl bg-surface-container p-5">
@@ -244,8 +139,7 @@ export default function Equalizer({
           <div className="min-w-0 flex-1">
             <p className="text-[15px] font-semibold text-on-surface">Equaliser</p>
             <p className="text-[12px] text-outline">
-              {bands} bands
-              {eq.adaptive.on && " · the stabiliser is driving these"}
+              {bands} bands · your curve; the signature layers stack on top
             </p>
           </div>
           <button
@@ -271,7 +165,6 @@ export default function Equalizer({
                 key={p.id}
                 type="button"
                 onClick={() => onSetGains(p.gains)}
-                disabled={eq.adaptive.on}
                 className="px-3 py-1.5 rounded-full bg-surface-high text-[11px] font-semibold text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors flex-shrink-0 disabled:opacity-40"
               >
                 {p.name}
@@ -292,19 +185,17 @@ export default function Equalizer({
           >
             {eq.frequencies.map((hz, i) => {
               const manual = eq.gains[i] ?? 0;
-              const auto = curve?.[i] ?? 0;
-              /* When the stabiliser runs it is what you actually hear, so
-                 show that and keep the hand-set value behind it. */
-              const shown = eq.adaptive.on ? auto : manual;
+              const total = composed?.[i];
               return (
                 <div key={hz} className="flex flex-col items-center gap-1.5 flex-1 min-w-[26px]">
                   <span
                     className={`text-[9px] font-mono tabular-nums ${
-                      Math.abs(shown) < 0.1 ? "text-outline/60" : "text-primary"
+                      Math.abs(manual) < 0.1 ? "text-outline/60" : "text-primary"
                     }`}
+                    title={typeof total === "number" ? `Running total ${total > 0 ? "+" : ""}${total.toFixed(1)} dB` : undefined}
                   >
-                    {shown > 0 ? "+" : ""}
-                    {shown.toFixed(1)}
+                    {manual > 0 ? "+" : ""}
+                    {manual.toFixed(1)}
                   </span>
 
                   <input
@@ -312,8 +203,7 @@ export default function Equalizer({
                     min={-RANGE}
                     max={RANGE}
                     step={0.5}
-                    value={shown}
-                    disabled={eq.adaptive.on}
+                    value={manual}
                     onChange={(e) => setBand(i, Number(e.target.value))}
                     aria-label={`${label(hz)} hertz`}
                     className="eq-slider"
@@ -321,6 +211,12 @@ export default function Equalizer({
                   />
 
                   <span className="text-[9px] text-outline font-mono">{label(hz)}</span>
+                  {typeof total === "number" && Math.abs(total - manual) >= 0.1 && (
+                    <span className="text-[8px] text-lossless font-mono tabular-nums" title="What the filters are running, all layers summed">
+                      {total > 0 ? "+" : ""}
+                      {total.toFixed(1)}
+                    </span>
+                  )}
                 </div>
               );
             })}

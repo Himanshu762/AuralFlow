@@ -30,7 +30,6 @@ import {
 import { parseDynamicCSV, parseJSPF, parseXSPF, parseXML, parseM3U } from './playlist-importer.js';
 
 const TIMEUPDATE_MS = 250;
-const SPECTRUM_FPS = 15;
 
 /* The ten bands AuralFlow's spectrum widget draws, in Hz. */
 const BANDS = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
@@ -113,7 +112,6 @@ async function playbackAvailable() {
 let player = null;
 let api = null;
 let lastState = null;
-let spectrumTimer = null;
 
 /**
  * Full track objects from the last search, keyed by id.
@@ -383,6 +381,10 @@ function emitTrackLoaded() {
     if (!track) return;
     /* A new record gets measured on its own terms, not the last one's. */
     resetAdaptive();
+    if (!measure || measure.trackId !== track.id) {
+        if (measure) emitFeatures(true);
+        resetMeasurement(track.id);
+    }
     /* The position in the queue moved, so the shell's view of it is stale. */
     try {
         send('queue', readQueue());
@@ -621,7 +623,8 @@ function adaptiveStep() {
     }
 
     adaptive.applied = curve;
-    audioContextManager.applyTransientGains(curve, 0.25);
+    signature.track = curve;
+    composeSignature(0.25);
 }
 
 function startAdaptive() {
@@ -640,9 +643,9 @@ function stopAdaptive() {
     adaptive.on = false;
     adaptive.average = null;
     adaptive.applied = null;
-    /* Hand the graph back to whatever the user had set by hand. */
-    const gains = audioContextManager?.getGains?.();
-    if (Array.isArray(gains)) audioContextManager.applyTransientGains(gains, 0.1);
+    /* Drop the track layer; the other layers stay exactly as they were. */
+    signature.track = null;
+    composeSignature(0.1);
 }
 
 /** Forget the per-track measurement — called when the track changes, so a new
@@ -715,53 +718,141 @@ function readEqState() {
                the correction over the user's own curve. */
             curve: adaptive.applied,
         },
+        signature: readSignature(),
     };
 }
 
 /* ------------------------------------------------------------------ */
-/* Live spectrum — real FFT from the shared analyser                  */
+/* Live analysis — spectrum for the shell, features for the library    */
 /* ------------------------------------------------------------------ */
 
-function startSpectrum() {
-    if (spectrumTimer) return;
+/*
+ * One timer reads the engine's shared AnalyserNode while audio plays and
+ * feeds two consumers:
+ *
+ *  - the shell's spectrum widget and measured waveform (`af:spectrum`);
+ *  - the library's mood reading for the track (`af:features`).
+ *
+ * The features are the DJ's eyes. Nothing here is fetched from a catalogue
+ * or guessed from a genre tag: every number is measured from the audio that
+ * is actually coming out of the graph, accumulated for as long as the track
+ * plays, and reported with how many seconds it rests on.
+ *
+ * What is measured, per frame, from the byte FFT and the time-domain window:
+ *
+ *   loudness       RMS of the window, in dBFS
+ *   crest          peak-to-RMS ratio, in dB (compression tells on itself here)
+ *   dynamic range  spread of frame loudness over the track (p95 − p10)
+ *   centroid       spectral centre of mass, in Hz — brightness
+ *   rolloff        frequency below which 85 % of the energy sits
+ *   flatness       geometric / arithmetic mean of the spectrum — noisiness
+ *   flux           how much the spectrum changed since the last frame
+ *   band ratios    energy fraction below 150 Hz, in 300–3400 Hz, above 4 kHz
+ *   chroma         energy per pitch class, for a key and major/minor reading
+ *   onsets         the flux series, autocorrelated for tempo and beat strength
+ *
+ * The backend turns these into the five mood dimensions; see
+ * backend/app/services/feature_service.py for the mapping and its caveats.
+ */
 
-    spectrumTimer = setInterval(() => {
-        const analyser = audioContextManager?.getAnalyser?.();
-        const ctx = audioContextManager?.getAudioContext?.();
-        const el = currentElement();
-        if (!analyser || !ctx || !el || el.paused) return;
+const ANALYSIS_HZ = 30;
+const SPECTRUM_EVERY = 2; // ticks — 15 fps to the shell is plenty
+const FEATURES_EVERY_MS = 3000;
+const ONSET_SECONDS = 12;
+const SILENCE_RMS = 0.004;
 
-        const bins = new Uint8Array(analyser.frequencyBinCount);
-        analyser.getByteFrequencyData(bins);
+/* Krumhansl–Kessler key profiles, for the major/minor reading. */
+const MAJOR_PROFILE = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
+const MINOR_PROFILE = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
 
-        // Map FFT bins onto the ten display bands by averaging each band's range.
-        const nyquist = ctx.sampleRate / 2;
-        const binHz = nyquist / bins.length;
-        const levels = BANDS.map((centre, i) => {
-            const lower = i === 0 ? 0 : Math.sqrt(centre * BANDS[i - 1]);
-            const upper = i === BANDS.length - 1 ? nyquist : Math.sqrt(centre * BANDS[i + 1]);
-            const from = Math.max(0, Math.floor(lower / binHz));
-            const to = Math.min(bins.length - 1, Math.ceil(upper / binHz));
-            let sum = 0;
-            let count = 0;
-            for (let b = from; b <= to; b++) {
-                sum += bins[b];
-                count++;
-            }
-            return count > 0 ? sum / count / 255 : 0;
-        });
+let analysisTimer = null;
+let analysisTick = 0;
+let lastFeaturesAt = 0;
 
-        // Real RMS of the current window, so the shell can build a waveform
-        // from what has actually been heard.
-        const samples = new Uint8Array(analyser.fftSize);
-        analyser.getByteTimeDomainData(samples);
-        let sumSquares = 0;
-        for (let i = 0; i < samples.length; i++) {
-            const v = (samples[i] - 128) / 128;
-            sumSquares += v * v;
+/** Everything accumulated for the track currently being measured. */
+let measure = null;
+
+function newMeasurement(trackId) {
+    return {
+        trackId,
+        frames: 0,
+        loud: 0,           // Σ loudness dB
+        peak: 0,           // max |sample|
+        rmsLinear: 0,      // Σ rms
+        centroid: 0,
+        rolloff: 0,
+        flatness: 0,
+        flux: 0,
+        lf: 0,
+        vocal: 0,
+        vocalSq: 0,
+        hf: 0,
+        chroma: new Float64Array(12),
+        rmsDb: [],         // per-frame loudness for the dynamic-range percentiles
+        onset: new Float32Array(ONSET_SECONDS * ANALYSIS_HZ),
+        onsetPos: 0,
+        onsetFilled: 0,
+        prevMag: null,
+        tempo: null,
+        beatStrength: 0,
+    };
+}
+
+function resetMeasurement(trackId) {
+    measure = newMeasurement(trackId);
+    lastFeaturesAt = Date.now();
+}
+
+/** Byte FFT value → linear magnitude, using the analyser's own dB range. */
+function magnitudeTable(analyser) {
+    const min = analyser.minDecibels;
+    const range = analyser.maxDecibels - min;
+    const table = new Float32Array(256);
+    for (let v = 0; v < 256; v++) {
+        table[v] = v === 0 ? 0 : Math.pow(10, (min + (v / 255) * range) / 20);
+    }
+    return table;
+}
+let magTable = null;
+let magTableFor = null;
+
+function analyseFrame(analyser, ctx, el) {
+    const bins = new Uint8Array(analyser.frequencyBinCount);
+    analyser.getByteFrequencyData(bins);
+    const samples = new Uint8Array(analyser.fftSize);
+    analyser.getByteTimeDomainData(samples);
+
+    const nyquist = ctx.sampleRate / 2;
+    const binHz = nyquist / bins.length;
+
+    /* ---- Spectrum for the shell, on the ten display bands ---- */
+    const levels = BANDS.map((centre, i) => {
+        const lower = i === 0 ? 0 : Math.sqrt(centre * BANDS[i - 1]);
+        const upper = i === BANDS.length - 1 ? nyquist : Math.sqrt(centre * BANDS[i + 1]);
+        const from = Math.max(0, Math.floor(lower / binHz));
+        const to = Math.min(bins.length - 1, Math.ceil(upper / binHz));
+        let sum = 0;
+        let count = 0;
+        for (let b = from; b <= to; b++) {
+            sum += bins[b];
+            count++;
         }
-        const rms = Math.sqrt(sumSquares / samples.length);
+        return count > 0 ? sum / count / 255 : 0;
+    });
 
+    /* ---- Time domain: RMS and peak ---- */
+    let sumSquares = 0;
+    let peak = 0;
+    for (let i = 0; i < samples.length; i++) {
+        const v = (samples[i] - 128) / 128;
+        sumSquares += v * v;
+        const a = Math.abs(v);
+        if (a > peak) peak = a;
+    }
+    const rms = Math.sqrt(sumSquares / samples.length);
+
+    analysisTick++;
+    if (analysisTick % SPECTRUM_EVERY === 0) {
         send('spectrum', {
             levels,
             rms,
@@ -769,14 +860,726 @@ function startSpectrum() {
             duration: Number(el.duration) || 0,
             sampleRate: ctx.sampleRate,
         });
-    }, Math.round(1000 / SPECTRUM_FPS));
+    }
+
+    /* ---- Features: only frames with signal in them ---- */
+    if (!measure || rms < SILENCE_RMS) return;
+
+    if (magTableFor !== analyser) {
+        magTable = magnitudeTable(analyser);
+        magTableFor = analyser;
+    }
+
+    const n = bins.length;
+    const mag = new Float32Array(n);
+    const power = new Float32Array(n);
+    let total = 0;
+    let weighted = 0;
+    let logSum = 0;
+    let logCount = 0;
+    let lf = 0;
+    let vocal = 0;
+    let hf = 0;
+    let fluxNum = 0;
+    let fluxDen = 0;
+    const chroma = measure.chroma;
+
+    for (let k = 1; k < n; k++) {
+        const m = magTable[bins[k]];
+        const p = m * m;
+        const f = k * binHz;
+        mag[k] = m;
+        power[k] = p;
+        total += p;
+        weighted += f * p;
+        if (f >= 50 && f <= 16000) {
+            logSum += Math.log(p + 1e-12);
+            logCount++;
+        }
+        if (f < 150) lf += p;
+        else if (f >= 300 && f <= 3400) vocal += p;
+        if (f > 4000) hf += p;
+        if (measure.prevMag) {
+            const d = m - measure.prevMag[k];
+            if (d > 0) fluxNum += d;
+            fluxDen += m;
+        }
+    }
+    if (total <= 0) return;
+
+    /* Chroma from spectral peaks only. Summing every bin lets broadband
+       energy — drums, noise, a click — swamp the few bins that carry pitch,
+       and the key reading turns to mush. A bin has to stand above its
+       neighbours to count as a note. */
+    const kLow = Math.max(4, Math.floor(60 / binHz));
+    const kHigh = Math.min(n - 4, Math.ceil(5000 / binHz));
+    for (let k = kLow; k <= kHigh; k++) {
+        const m = mag[k];
+        if (m <= mag[k - 1] || m < mag[k + 1]) continue;
+        const floor = (mag[k - 3] + mag[k + 3]) / 2;
+        if (m < floor * 2) continue;
+        const f = k * binHz;
+        /* Pitch class with C at index 0, to line up with the profiles
+           (A440 sits nine semitones above C). */
+        const pc = (((Math.round(12 * Math.log2(f / 440)) + 9) % 12) + 12) % 12;
+        chroma[pc] += power[k];
+    }
+
+    /* Rolloff: the bin below which 85 % of the energy sits. */
+    let acc = 0;
+    let rolloffHz = nyquist;
+    for (let k = 1; k < n; k++) {
+        acc += power[k];
+        if (acc >= 0.85 * total) {
+            rolloffHz = k * binHz;
+            break;
+        }
+    }
+
+    const flux = measure.prevMag && fluxDen > 0 ? fluxNum / fluxDen : 0;
+    const flatness = logCount > 0 ? Math.exp(logSum / logCount) / (total / (n - 1) + 1e-12) : 0;
+    const vocalRatio = vocal / total;
+    const loudDb = 20 * Math.log10(Math.max(rms, 1e-5));
+
+    measure.frames++;
+    measure.loud += loudDb;
+    measure.rmsLinear += rms;
+    if (peak > measure.peak) measure.peak = peak;
+    measure.centroid += weighted / total;
+    measure.rolloff += rolloffHz;
+    measure.flatness += Math.min(1, flatness);
+    measure.flux += flux;
+    measure.lf += lf / total;
+    measure.vocal += vocalRatio;
+    measure.vocalSq += vocalRatio * vocalRatio;
+    measure.hf += hf / total;
+    if (measure.rmsDb.length < 12000) measure.rmsDb.push(loudDb);
+    measure.prevMag = mag;
+
+    /* Onset envelope for the tempo estimate. */
+    measure.onset[measure.onsetPos] = flux;
+    measure.onsetPos = (measure.onsetPos + 1) % measure.onset.length;
+    if (measure.onsetFilled < measure.onset.length) measure.onsetFilled++;
+}
+
+/**
+ * Tempo from the onset envelope: autocorrelate over the lags that map to
+ * 60–200 BPM and take the strongest, refined by parabolic interpolation.
+ * Beat strength is how far that peak stands above the rest.
+ */
+function estimateTempo() {
+    if (!measure || measure.onsetFilled < ANALYSIS_HZ * 4) return;
+    const len = measure.onsetFilled;
+    const series = new Float32Array(len);
+    let mean = 0;
+    for (let i = 0; i < len; i++) {
+        const idx = (measure.onsetPos - len + i + measure.onset.length) % measure.onset.length;
+        series[i] = measure.onset[idx];
+        mean += series[i];
+    }
+    mean /= len;
+    let energy = 0;
+    for (let i = 0; i < len; i++) {
+        series[i] -= mean;
+        energy += series[i] * series[i];
+    }
+    if (energy <= 1e-9) return;
+
+    const minLag = Math.max(2, Math.floor((60 / 200) * ANALYSIS_HZ));
+    const maxLag = Math.min(len - 2, Math.ceil((60 / 60) * ANALYSIS_HZ));
+    const corr = new Float32Array(maxLag + 2);
+    let sumCorr = 0;
+    let count = 0;
+    for (let lag = minLag; lag <= maxLag; lag++) {
+        let s = 0;
+        for (let i = lag; i < len; i++) s += series[i] * series[i - lag];
+        corr[lag] = s / energy;
+        sumCorr += corr[lag];
+        count++;
+    }
+    let best = minLag;
+    for (let lag = minLag + 1; lag <= maxLag; lag++) {
+        if (corr[lag] > corr[best]) best = lag;
+    }
+    /* Autocorrelation peaks at every multiple of the beat, so the strongest
+       lag can be the half- or double-tempo. Among the peaks that come close
+       to the strongest, take the one nearest a typical tempo (~115 BPM). */
+    const peakCorr = corr[best];
+    const candidates = [best, best * 2, Math.round(best / 2)].filter(
+        (lag) => lag >= minLag && lag <= maxLag && corr[lag] >= peakCorr * 0.85
+    );
+    if (candidates.length > 1) {
+        const bpmOf = (lag) => (60 * ANALYSIS_HZ) / lag;
+        best = candidates.reduce((a, b) =>
+            Math.abs(Math.log(bpmOf(b) / 115)) < Math.abs(Math.log(bpmOf(a) / 115)) ? b : a
+        );
+    }
+
+    let refined = best;
+    if (best > minLag && best < maxLag) {
+        const a = corr[best - 1];
+        const b = corr[best];
+        const c = corr[best + 1];
+        const denom = a - 2 * b + c;
+        if (Math.abs(denom) > 1e-9) refined = best + 0.5 * ((a - c) / denom);
+    }
+    const bpm = (60 * ANALYSIS_HZ) / refined;
+    const avg = count > 0 ? sumCorr / count : 0;
+    const strength = Math.max(0, Math.min(1, (corr[best] - avg) / Math.max(1e-6, 1 - avg)));
+
+    measure.tempo = Math.round(bpm * 10) / 10;
+    measure.beatStrength = Math.round(strength * 1000) / 1000;
+}
+
+function modeAndKey() {
+    const c = measure.chroma;
+    let total = 0;
+    for (let i = 0; i < 12; i++) total += c[i];
+    if (total <= 0) return { modeMajor: null, key: null };
+    const norm = Array.from(c, (v) => v / total);
+
+    const correlate = (profile, shift) => {
+        let sp = 0, sn = 0, spp = 0, snn = 0, spn = 0;
+        for (let i = 0; i < 12; i++) {
+            const p = profile[(i - shift + 12) % 12];
+            const x = norm[i];
+            sp += p; sn += x; spp += p * p; snn += x * x; spn += p * x;
+        }
+        const num = 12 * spn - sp * sn;
+        const den = Math.sqrt((12 * spp - sp * sp) * (12 * snn - sn * sn));
+        return den > 0 ? num / den : 0;
+    };
+
+    let bestMajor = -2, bestMinor = -2, majorKey = 0, minorKey = 0;
+    for (let shift = 0; shift < 12; shift++) {
+        const maj = correlate(MAJOR_PROFILE, shift);
+        const min = correlate(MINOR_PROFILE, shift);
+        if (maj > bestMajor) { bestMajor = maj; majorKey = shift; }
+        if (min > bestMinor) { bestMinor = min; minorKey = shift; }
+    }
+    const key = bestMajor >= bestMinor ? majorKey : minorKey;
+    /* Map the difference in correlation onto 0..1 — 0.5 is "can't tell". */
+    const modeMajor = Math.max(0, Math.min(1, 0.5 + (bestMajor - bestMinor) * 1.5));
+    return { modeMajor: Math.round(modeMajor * 1000) / 1000, key };
+}
+
+function percentile(sorted, p) {
+    if (sorted.length === 0) return null;
+    const idx = Math.max(0, Math.min(sorted.length - 1, Math.round(p * (sorted.length - 1))));
+    return sorted[idx];
+}
+
+/** The measurement so far, in the shape the backend expects. */
+function featuresSnapshot() {
+    if (!measure || measure.frames === 0) return null;
+    const n = measure.frames;
+    const rmsMean = measure.rmsLinear / n;
+    const sorted = measure.rmsDb.slice().sort((a, b) => a - b);
+    const p10 = percentile(sorted, 0.1);
+    const p95 = percentile(sorted, 0.95);
+    const vocalMean = measure.vocal / n;
+    const vocalVar = Math.max(0, measure.vocalSq / n - vocalMean * vocalMean);
+    const { modeMajor, key } = modeAndKey();
+    return {
+        seconds: Math.round((n / ANALYSIS_HZ) * 10) / 10,
+        frames: n,
+        loudness_db: round(measure.loud / n, 2),
+        crest_db: round(20 * Math.log10(Math.max(measure.peak, 1e-5) / Math.max(rmsMean, 1e-5)), 2),
+        dynamic_range_db: p10 !== null && p95 !== null ? round(p95 - p10, 2) : null,
+        centroid_hz: round(measure.centroid / n, 1),
+        rolloff_hz: round(measure.rolloff / n, 1),
+        flatness: round(measure.flatness / n, 4),
+        flux: round(measure.flux / n, 4),
+        lf_ratio: round(measure.lf / n, 4),
+        vocal_ratio: round(vocalMean, 4),
+        vocal_modulation: round(vocalVar, 5),
+        hf_ratio: round(measure.hf / n, 4),
+        tempo_bpm: measure.tempo,
+        beat_strength: measure.beatStrength,
+        mode_major: modeMajor,
+        key,
+    };
+}
+
+function round(v, digits) {
+    if (!Number.isFinite(v)) return null;
+    const f = Math.pow(10, digits);
+    return Math.round(v * f) / f;
+}
+
+function emitFeatures(final = false) {
+    const snapshot = featuresSnapshot();
+    if (!snapshot || !measure?.trackId) return;
+    send('features', { trackId: measure.trackId, final, ...snapshot });
+    lastFeaturesAt = Date.now();
+}
+
+function analysisStep() {
+    const analyser = audioContextManager?.getAnalyser?.();
+    const ctx = audioContextManager?.getAudioContext?.();
+    const el = currentElement();
+    if (!analyser || !ctx || !el || el.paused) return;
+
+    try {
+        analyseFrame(analyser, ctx, el);
+    } catch (e) {
+        /* A transient graph state (a swapped element mid-crossfade) is not
+           worth stopping the whole analysis for. */
+        return;
+    }
+
+    if (measure && analysisTick % (ANALYSIS_HZ * 2) === 0) estimateTempo();
+    if (measure && Date.now() - lastFeaturesAt >= FEATURES_EVERY_MS) emitFeatures(false);
+}
+
+function startSpectrum() {
+    if (analysisTimer) return;
+    analysisTimer = setInterval(analysisStep, Math.round(1000 / ANALYSIS_HZ));
 }
 
 function stopSpectrum() {
-    if (spectrumTimer) {
-        clearInterval(spectrumTimer);
-        spectrumTimer = null;
+    if (analysisTimer) {
+        clearInterval(analysisTimer);
+        analysisTimer = null;
     }
+}
+
+/* ------------------------------------------------------------------ */
+/* Sound Signature — one correction from three sources                */
+/* ------------------------------------------------------------------ */
+
+/*
+ * The equaliser used to be a fight between things that wanted the same
+ * filters: a headphone correction, the adaptive stabiliser, and whatever the
+ * listener set by hand. Now they are *layers*, summed into one curve:
+ *
+ *   manual    the listener's own bands, exactly as the engine stores them
+ *   device    the correction for whatever is playing the sound — matched
+ *             from the AutoEQ database by the output device's name, or
+ *             chosen by hand — remembered per device and re-applied the
+ *             moment that device comes back
+ *   track     the adaptive stabiliser's correction for the record playing
+ *             now, measured live from the analyser
+ *   loudness  equal-loudness compensation: the quieter the volume, the more
+ *             the ear loses bass and a little treble, so a gentle shelf is
+ *             added back as the volume comes down
+ *
+ * The sum goes to the running filters through `applyTransientGains`, which
+ * never writes to the engine's storage. The manual layer therefore stays
+ * exactly what the listener saved, and every automatic layer is reversible
+ * by switching it off.
+ */
+
+const SIGNATURE_KEY = 'auralflow-signature';
+const DEVICE_PROFILES_KEY = 'auralflow-signature-devices';
+const LAYER_LIMIT_DB = 12;
+
+const signature = {
+    enabled: true,
+    loudnessOn: true,
+    autoDevice: true,
+    /* The output device, as far as the webview can tell. */
+    device: {
+        id: '',
+        label: '',
+        kind: 'unknown',   // headphones | speakers | unknown
+        correction: null,  // dB per band
+        headphone: null,   // AutoEQ entry the correction came from
+        target: null,
+        source: 'none',    // none | auto | manual | profile
+        message: null,
+    },
+    track: null,
+    loudness: null,
+    composed: null,
+    lastVolume: 1,
+};
+
+function loadSignaturePrefs() {
+    try {
+        const raw = JSON.parse(localStorage.getItem(SIGNATURE_KEY) || 'null');
+        if (raw && typeof raw === 'object') {
+            if (typeof raw.enabled === 'boolean') signature.enabled = raw.enabled;
+            if (typeof raw.loudnessOn === 'boolean') signature.loudnessOn = raw.loudnessOn;
+            if (typeof raw.autoDevice === 'boolean') signature.autoDevice = raw.autoDevice;
+        }
+    } catch {
+        /* nothing stored */
+    }
+}
+
+function saveSignaturePrefs() {
+    try {
+        localStorage.setItem(
+            SIGNATURE_KEY,
+            JSON.stringify({
+                enabled: signature.enabled,
+                loudnessOn: signature.loudnessOn,
+                autoDevice: signature.autoDevice,
+            })
+        );
+    } catch {
+        /* storage unavailable */
+    }
+}
+
+function loadDeviceProfiles() {
+    try {
+        const raw = JSON.parse(localStorage.getItem(DEVICE_PROFILES_KEY) || '{}');
+        return raw && typeof raw === 'object' ? raw : {};
+    } catch {
+        return {};
+    }
+}
+
+function saveDeviceProfile(key, profile) {
+    if (!key) return;
+    const profiles = loadDeviceProfiles();
+    if (profile) profiles[key] = profile;
+    else delete profiles[key];
+    try {
+        localStorage.setItem(DEVICE_PROFILES_KEY, JSON.stringify(profiles));
+    } catch {
+        /* storage unavailable */
+    }
+}
+
+function deviceKey() {
+    return signature.device.label || signature.device.id || 'default';
+}
+
+/** Headphones, speakers, or no idea — from the device's name. */
+function classifyDevice(label) {
+    const l = String(label || '').toLowerCase();
+    if (!l) return 'unknown';
+    if (/headphone|headset|earbud|earphone|airpod|buds|iem|in-ear|wh-|wf-|momentum|hd ?\d{3}|dt ?\d{3}|arctis|quietcomfort|qc\d/.test(l)) return 'headphones';
+    if (/speaker|monitor|hdmi|displayport|soundbar|built-in output|internal speakers/.test(l)) return 'speakers';
+    return 'unknown';
+}
+
+/**
+ * Equal-loudness compensation as a curve over the EQ's own bands.
+ *
+ * Quiet playback loses bass first and a little treble after; the boost here
+ * grows with the attenuation below full volume and tapers to nothing above
+ * about 500 Hz for the bass shelf and below 6 kHz for the treble one.
+ */
+function loudnessCurve(volume, freqs) {
+    if (!signature.loudnessOn || !Array.isArray(freqs) || freqs.length === 0) return null;
+    const v = Math.max(0.01, Math.min(1, Number(volume) || 0));
+    const attenuation = -20 * Math.log10(v); // dB below full
+    if (attenuation < 3) return null;
+    const bass = Math.min(9, (attenuation - 3) * 0.3);
+    const treble = Math.min(3, (attenuation - 3) * 0.1);
+    return freqs.map((hz) => {
+        let gain = 0;
+        if (hz <= 80) gain += bass;
+        else if (hz < 500) gain += bass * (1 - Math.log2(hz / 80) / Math.log2(500 / 80));
+        if (hz >= 12000) gain += treble;
+        else if (hz > 6000) gain += treble * (Math.log2(hz / 6000) / Math.log2(12000 / 6000));
+        return Math.round(gain * 100) / 100;
+    });
+}
+
+function currentVolume() {
+    const el = currentElement();
+    const fromElement = el && Number.isFinite(el.volume) ? el.volume : null;
+    const fromPlayer = Number.isFinite(player?.volume) ? player.volume : null;
+    return fromPlayer ?? fromElement ?? signature.lastVolume;
+}
+
+/** Sum the layers and push them to the running filters. */
+function composeSignature(ramp = 0.15) {
+    const freqs = adaptiveBands();
+    if (!freqs) return;
+    const n = freqs.length;
+    const manual = (audioContextManager?.getGains?.() ?? []).map(Number);
+    const sum = new Array(n).fill(0);
+    for (let i = 0; i < n; i++) sum[i] = Number(manual[i]) || 0;
+
+    const layers = [];
+    if (signature.enabled) {
+        if (signature.device.correction) layers.push(signature.device.correction);
+        if (signature.track) layers.push(signature.track);
+        signature.loudness = loudnessCurve(currentVolume(), freqs);
+        if (signature.loudness) layers.push(signature.loudness);
+    } else {
+        signature.loudness = null;
+    }
+    for (const layer of layers) {
+        for (let i = 0; i < n; i++) sum[i] += Number(layer[i]) || 0;
+    }
+    for (let i = 0; i < n; i++) {
+        sum[i] = Math.max(-LAYER_LIMIT_DB, Math.min(LAYER_LIMIT_DB, Math.round(sum[i] * 100) / 100));
+    }
+
+    /* Automatic layers need the chain live to do anything. */
+    if (layers.length > 0 && audioContextManager?.isEQEnabled === false) {
+        try { audioContextManager.toggleEQ(true); } catch { /* engine decides */ }
+    }
+    signature.composed = sum;
+    audioContextManager.applyTransientGains(sum, ramp);
+}
+
+/** The band gains an AutoEQ correction produces, aligned to the EQ's bands. */
+function bandsToGains(bands, freqs) {
+    if (!Array.isArray(bands) || !Array.isArray(freqs)) return null;
+    const gains = new Array(freqs.length).fill(0);
+    const byFrequency = bands.every((b) => b && Number.isFinite(Number(b.frequency ?? b.freq)));
+    if (byFrequency) {
+        for (const b of bands) {
+            const f = Number(b.frequency ?? b.freq);
+            let best = 0;
+            for (let i = 1; i < freqs.length; i++) {
+                if (Math.abs(Math.log(freqs[i] / f)) < Math.abs(Math.log(freqs[best] / f))) best = i;
+            }
+            gains[best] += Number(b.gain) || 0;
+        }
+    } else {
+        for (let i = 0; i < Math.min(bands.length, freqs.length); i++) {
+            gains[i] = Number(bands[i]?.gain ?? bands[i]) || 0;
+        }
+    }
+    return gains.map((g) => Math.round(g * 100) / 100);
+}
+
+async function correctionFor(entry, targetId) {
+    const target = TARGETS.find((t) => t.id === String(targetId)) ?? TARGETS[0];
+    const measurement = await fetchHeadphoneData(entry);
+    if (!Array.isArray(measurement) || measurement.length === 0) {
+        throw new Error('That measurement could not be fetched.');
+    }
+    const freqs = adaptiveBands() ?? [];
+    const bands = runAutoEqAlgorithm(measurement, target.data, freqs.length || 10);
+    const gains = bandsToGains(bands, freqs);
+    if (!gains) throw new Error('No correction could be computed for this pairing.');
+    return { gains, target };
+}
+
+/** Apply a headphone correction to the device layer and remember it. */
+async function applyDeviceCorrection(entry, targetId, source) {
+    const { gains, target } = await correctionFor(entry, targetId);
+    signature.device.correction = gains;
+    signature.device.headphone = {
+        name: String(entry.name ?? ''),
+        type: String(entry.type ?? ''),
+        path: String(entry.path ?? ''),
+        fileName: String(entry.fileName ?? ''),
+    };
+    signature.device.target = target.id;
+    signature.device.source = source;
+    signature.device.message = null;
+    saveDeviceProfile(deviceKey(), {
+        label: signature.device.label,
+        headphone: signature.device.headphone,
+        target: target.id,
+        gains,
+        source,
+    });
+    composeSignature(0.3);
+}
+
+function clearDeviceCorrection(forget = true) {
+    signature.device.correction = null;
+    signature.device.headphone = null;
+    signature.device.target = null;
+    signature.device.source = 'none';
+    if (forget) saveDeviceProfile(deviceKey(), null);
+    composeSignature(0.2);
+}
+
+/** Tokens from a device name that would identify it in the AutoEQ index. */
+function matchTokens(label) {
+    return String(label || '')
+        .toLowerCase()
+        .replace(/\(.*?\)/g, ' ')
+        .replace(/[^a-z0-9+ -]/g, ' ')
+        .split(/\s+/)
+        .filter((t) => t.length >= 2 && !/^(the|and|for|with|audio|stereo|output|default|hands-free|handsfree|ag|a2dp|sink|analog|digital|usb|bluetooth|bt|device|monitor)$/.test(t));
+}
+
+/**
+ * Find the AutoEQ entry that best matches an output device's name.
+ *
+ * Only a match where every distinctive token of the device name appears in
+ * the entry's name is trusted — "Sony WH-1000XM4" must not become the XM3.
+ */
+async function autoMatchDevice() {
+    const label = signature.device.label;
+    const tokens = matchTokens(label);
+    if (tokens.length === 0) return null;
+    const index = await fetchAutoEqIndex().catch(() => null);
+    const entries = searchHeadphones(tokens.join(' '), index || POPULAR_HEADPHONES, 'all', 40) || [];
+    const modelTokens = tokens.filter((t) => /\d/.test(t) || t.length >= 4);
+    for (const entry of entries) {
+        const name = String(entry.name ?? '').toLowerCase();
+        if (modelTokens.length > 0 && modelTokens.every((t) => name.includes(t))) return entry;
+    }
+    return null;
+}
+
+/**
+ * The output device changed (or was just discovered). Restore the profile
+ * we have for it; failing that, try to match it in AutoEQ; failing that,
+ * run with no device correction and say so.
+ */
+async function onDeviceResolved() {
+    const profiles = loadDeviceProfiles();
+    const profile = profiles[deviceKey()];
+    if (profile?.gains) {
+        signature.device.correction = profile.gains;
+        signature.device.headphone = profile.headphone ?? null;
+        signature.device.target = profile.target ?? null;
+        signature.device.source = 'profile';
+        signature.device.message = null;
+        composeSignature(0.3);
+        emitSignature();
+        return;
+    }
+
+    signature.device.correction = null;
+    signature.device.headphone = null;
+    signature.device.target = null;
+    signature.device.source = 'none';
+    signature.device.message = null;
+    composeSignature(0.3);
+    emitSignature();
+
+    if (!signature.autoDevice || !signature.device.label) return;
+    try {
+        const entry = await autoMatchDevice();
+        if (entry) {
+            await applyDeviceCorrection(entry, TARGETS[0]?.id, 'auto');
+        } else {
+            signature.device.message = `No AutoEQ measurement matches "${signature.device.label}". Pick one by hand if you know the model.`;
+        }
+    } catch (e) {
+        signature.device.message = String(e?.message ?? e);
+    }
+    emitSignature();
+}
+
+/* ---- Output devices ---- */
+
+const devices = {
+    supported: typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices?.enumerateDevices),
+    list: [],
+    labelsAvailable: false,
+    current: '',
+};
+
+async function refreshDevices(requestLabels = false) {
+    if (!devices.supported) {
+        emitDevices();
+        return;
+    }
+    if (requestLabels) {
+        /* Labels are withheld until a media permission is granted; asking for
+           a microphone stream and releasing it immediately is the standard
+           way to unlock them. Only on an explicit request from the shell. */
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            for (const track of stream.getTracks()) track.stop();
+        } catch {
+            /* denied — labels stay hidden */
+        }
+    }
+    try {
+        const all = await navigator.mediaDevices.enumerateDevices();
+        const outputs = all.filter((d) => d.kind === 'audiooutput');
+        devices.list = outputs.map((d, i) => ({
+            id: d.deviceId,
+            label: d.label || (d.deviceId === 'default' ? 'System default' : `Output ${i + 1}`),
+            kind: classifyDevice(d.label),
+        }));
+        devices.labelsAvailable = outputs.some((d) => Boolean(d.label));
+    } catch {
+        devices.list = [];
+    }
+    const el = currentElement() ?? player?.audioElements?.[0];
+    devices.current = String(el?.sinkId ?? '');
+    syncDeviceFromList();
+    emitDevices();
+}
+
+/** Reflect the selected sink onto the signature's notion of the device. */
+function syncDeviceFromList() {
+    const chosen =
+        devices.list.find((d) => d.id === devices.current) ||
+        devices.list.find((d) => d.id === 'default') ||
+        devices.list[0];
+    const label = chosen?.label ?? '';
+    const id = chosen?.id ?? '';
+    const changed = label !== signature.device.label || id !== signature.device.id;
+    signature.device.id = id;
+    signature.device.label = signature.device.source === 'manual' && !changed ? signature.device.label : label;
+    signature.device.kind = classifyDevice(signature.device.label);
+    if (changed) void onDeviceResolved();
+}
+
+async function selectDevice(id) {
+    const elements = player?.audioElements ?? [];
+    let applied = false;
+    for (const el of elements) {
+        if (typeof el.setSinkId === 'function') {
+            await el.setSinkId(id);
+            applied = true;
+        }
+    }
+    const ctx = audioContextManager?.getAudioContext?.();
+    if (ctx && typeof ctx.setSinkId === 'function') {
+        try { await ctx.setSinkId(id === 'default' ? '' : id); applied = true; } catch { /* not every backend can */ }
+    }
+    if (!applied) throw new Error('This platform does not let the app choose an output device.');
+    devices.current = id;
+    syncDeviceFromList();
+    emitDevices();
+}
+
+function emitDevices() {
+    send('devices', {
+        supported: devices.supported,
+        labelsAvailable: devices.labelsAvailable,
+        current: devices.current,
+        devices: devices.list.map((d) => ({ ...d, current: d.id === devices.current })),
+    });
+}
+
+function readSignature() {
+    return {
+        enabled: signature.enabled,
+        loudnessOn: signature.loudnessOn,
+        autoDevice: signature.autoDevice,
+        device: { ...signature.device },
+        track: signature.track,
+        loudness: signature.loudness,
+        manual: (audioContextManager?.getGains?.() ?? []).map(Number),
+        composed: signature.composed,
+        frequencies: adaptiveBands() ?? [],
+        volume: currentVolume(),
+    };
+}
+
+function emitSignature() {
+    send('signature', readSignature());
+}
+
+function initSignature() {
+    loadSignaturePrefs();
+    if (devices.supported && navigator.mediaDevices?.addEventListener) {
+        navigator.mediaDevices.addEventListener('devicechange', () => void refreshDevices(false));
+    }
+    void refreshDevices(false);
+    /* The volume can change under us (engine UI, keyboard); keep the
+       loudness layer honest without waiting for a command. */
+    setInterval(() => {
+        const v = currentVolume();
+        if (Math.abs(v - signature.lastVolume) > 0.005) {
+            signature.lastVolume = v;
+            composeSignature(0.2);
+            emitSignature();
+        }
+    }, 1000);
 }
 
 /* ------------------------------------------------------------------ */
@@ -856,7 +1659,12 @@ async function handleCommand(type, data) {
 
         case 'volume': {
             const level = Number(data.level);
-            if (Number.isFinite(level)) player.setVolume(Math.max(0, Math.min(1, level)));
+            if (Number.isFinite(level)) {
+                player.setVolume(Math.max(0, Math.min(1, level)));
+                signature.lastVolume = Math.max(0, Math.min(1, level));
+                composeSignature(0.2);
+                emitSignature();
+            }
             break;
         }
 
@@ -1210,12 +2018,14 @@ async function handleCommand(type, data) {
                     audioContextManager.toggleEQ(Boolean(data.enabled));
                 }
                 if (Array.isArray(data.gains)) {
-                    if (adaptive.on) stopAdaptive();
+                    /* The hand-set curve is the base layer; the automatic
+                       layers are summed on top of whatever it becomes. */
                     audioContextManager.setAllGains(data.gains.map(Number));
                 }
                 if (data.preamp !== undefined) {
                     audioContextManager.setPreamp(Number(data.preamp) || 0);
                 }
+                composeSignature(0.1);
                 send('eqstate', readEqState());
             } catch (e) {
                 send('error', { scope: 'eq', message: String(e?.message ?? e) });
@@ -1354,32 +2164,18 @@ async function handleCommand(type, data) {
                     break;
                 }
                 const target = TARGETS.find((t) => t.id === String(data.target)) ?? TARGETS[0];
-                const measurement = await fetchHeadphoneData(entry);
-                if (!Array.isArray(measurement) || measurement.length === 0) {
-                    send('autoeq', { applied: false, message: 'That measurement could not be fetched.' });
-                    break;
-                }
 
-                const bandCount = adaptiveBands()?.length ?? 10;
-                const bands = runAutoEqAlgorithm(measurement, target.data, bandCount);
-                if (!bands || bands.length === 0) {
-                    send('autoeq', { applied: false, message: 'No correction needed for this pairing.' });
-                    break;
-                }
-
-                /* A correction is a fixed response for the hardware, so the
-                   adaptive layer has to stand down — both drive the same
-                   filters, and the stabiliser would undo it. */
-                if (adaptive.on) stopAdaptive();
-                audioContextManager.toggleEQ(true);
-                audioContextManager.applyAutoEQBands(bands);
-
+                /* The correction becomes the device layer of the Sound
+                   Signature, so it stacks with the stabiliser and the
+                   listener's own curve instead of replacing them. */
+                await applyDeviceCorrection(entry, target.id, 'manual');
                 send('autoeq', {
                     applied: true,
                     headphone: String(entry.name ?? ''),
                     target: target.label,
-                    bands: bands.length,
+                    bands: signature.device.correction?.length ?? 0,
                 });
+                emitSignature();
                 send('eqstate', readEqState());
             } catch (e) {
                 send('autoeq', { applied: false, message: String(e?.message ?? e) });
@@ -1523,8 +2319,86 @@ async function handleCommand(type, data) {
             break;
         }
 
+        case 'devices': {
+            /* Output devices the webview can see, and which one is in use. */
+            try {
+                await refreshDevices(Boolean(data.requestLabels));
+            } catch (e) {
+                send('error', { scope: 'devices', message: String(e?.message ?? e) });
+            }
+            break;
+        }
+
+        case 'setdevice': {
+            try {
+                await selectDevice(String(data.id ?? ''));
+            } catch (e) {
+                send('error', { scope: 'setdevice', message: String(e?.message ?? e) });
+                emitDevices();
+            }
+            break;
+        }
+
+        case 'signature': {
+            /* The Sound Signature layers: switch them, name the device by
+               hand, choose a correction, or forget one. */
+            try {
+                let recompose = false;
+                if (data.enabled !== undefined) { signature.enabled = Boolean(data.enabled); recompose = true; }
+                if (data.loudness !== undefined) { signature.loudnessOn = Boolean(data.loudness); recompose = true; }
+                if (data.autoDevice !== undefined) { signature.autoDevice = Boolean(data.autoDevice); }
+                saveSignaturePrefs();
+
+                if (typeof data.deviceLabel === 'string') {
+                    /* A device named by the listener, for platforms that hide
+                       labels or when the OS name is useless. */
+                    signature.device.label = data.deviceLabel.trim();
+                    signature.device.kind = classifyDevice(signature.device.label);
+                    signature.device.source = 'manual';
+                    await onDeviceResolved();
+                    break;
+                }
+                if (data.clearDevice) {
+                    clearDeviceCorrection(true);
+                } else if (data.headphone) {
+                    if (adaptive.on && signature.track) { /* layers coexist now; nothing to stop */ }
+                    await applyDeviceCorrection(data.headphone, data.target, 'manual');
+                } else if (recompose) {
+                    composeSignature(0.2);
+                }
+                emitSignature();
+            } catch (e) {
+                signature.device.message = String(e?.message ?? e);
+                emitSignature();
+                send('error', { scope: 'signature', message: String(e?.message ?? e) });
+            }
+            break;
+        }
+
+        case 'features': {
+            /* The measurement so far for the playing track, on demand. */
+            emitFeatures(false);
+            break;
+        }
+
         case 'ping':
             send('pong');
+            break;
+
+        case 'hello':
+            /* The shell attached its listener after we announced ourselves
+               (or reloaded). Announce again so it can connect. */
+            send('ready', {
+                version: 3,
+                playbackConfigured: await playbackAvailable(),
+                preferAtmos: (() => {
+                    try {
+                        return preferDolbyAtmosSettings.isEnabled();
+                    } catch {
+                        return false;
+                    }
+                })(),
+            });
             break;
     }
 }
@@ -1608,8 +2482,9 @@ async function boot() {
         });
 
         attachElementListeners();
+        initSignature();
         send('ready', {
-            version: 2,
+            version: 3,
             playbackConfigured: await playbackAvailable(),
             preferAtmos: (() => {
                 try {

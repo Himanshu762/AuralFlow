@@ -1,23 +1,22 @@
 """
 Recommendation Service
 
-Orchestrates the mood analysis and RL agent to rank candidate tracks.
-The frontend sends candidate tracks (from Monochrome search results),
-and this service scores and ranks them using the RL agent.
+Owns the RL agent's lifecycle (checkpoints, stats) and the two things the
+shell asks of it directly: rank a list of candidates, and learn from how a
+track was received. The DJ (`dj_service`) builds on the same agent to choose
+what plays next from the library.
 """
 
 import math
 import os
-import sys
+from typing import Dict, List, Optional
 
-# Add project root to path so ml package can be imported
 _project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-if _project_root not in sys.path:
-    sys.path.insert(0, _project_root)
 
-from typing import List, Dict, Optional
-from app.services.track_service import track_service
+from sqlalchemy.orm import Session
+
 from app.services.mood_service import mood_service
+from app.services.track_service import track_service
 from ml.agents.music_rl_agent import rl_agent
 
 
@@ -36,15 +35,7 @@ SAVE_EVERY_N_FEEDBACKS = 5
 
 
 class RecommendationService:
-    """
-    Core recommendation engine that combines:
-    1. Mood-based filtering (via heuristic mapper)
-    2. RL-based ranking
-    """
-
     def __init__(self) -> None:
-        # Last reward is a session figure; step counts live on the agent so
-        # they survive restarts along with the weights.
         self._last_reward: Optional[float] = None
         self._writes_since_save: int = 0
         self.load_checkpoint()
@@ -54,7 +45,6 @@ class RecommendationService:
     # ---------------------------------------------------------------- #
 
     def load_checkpoint(self) -> bool:
-        """Restore the agent from disk. Called once at construction."""
         restored = rl_agent.load_model(CHECKPOINT_PATH)
         if restored:
             print(
@@ -65,7 +55,6 @@ class RecommendationService:
         return restored
 
     def save_checkpoint(self) -> None:
-        """Persist the agent. Safe to call often; writes are atomic."""
         try:
             rl_agent.save_model(CHECKPOINT_PATH)
             self._writes_since_save = 0
@@ -73,7 +62,6 @@ class RecommendationService:
             print(f"[rl_agent] could not write checkpoint: {e}")
 
     def stats(self) -> Dict:
-        """Current training status of the RL agent."""
         return {
             "exploration_rate": float(rl_agent.epsilon),
             "memory_size": len(rl_agent.memory),
@@ -81,6 +69,10 @@ class RecommendationService:
             "last_reward": self._last_reward,
             "checkpoint": CHECKPOINT_PATH if os.path.isfile(CHECKPOINT_PATH) else None,
         }
+
+    # ---------------------------------------------------------------- #
+    # Ranking                                                           #
+    # ---------------------------------------------------------------- #
 
     def score_candidates(
         self,
@@ -90,66 +82,40 @@ class RecommendationService:
         time_of_day: str = "afternoon",
         device_type: str = "web",
         num_recommendations: int = 10,
+        target_mood: Optional[List[float]] = None,
+        db: Optional[Session] = None,
     ) -> List[Dict]:
-        """
-        Score and rank candidate tracks sent by the frontend.
-
-        Args:
-            candidates: List of track dicts with at minimum {id, title, artist, genre}
-            current_mood: Current mood vector [energy, valence, danceability, acousticness, instrumentalness]
-            recent_moods: List of recent mood vectors
-            time_of_day: morning, afternoon, evening, night
-            device_type: web, mobile, desktop
-            num_recommendations: Number of results to return
-
-        Returns:
-            Ranked list of tracks with confidence scores and mood data
-        """
+        """Rank candidate tracks the shell hands over (a search, a playlist)."""
         if not candidates:
             return []
 
-        # Step 1: Predict next mood direction
-        predicted_mood = mood_service.predict_next_mood(
-            recent_moods + [current_mood],
-            transition_weight=0.3,
+        predicted_mood = target_mood or mood_service.predict_next_mood(
+            recent_moods + [current_mood], transition_weight=0.3
         )
 
-        # Step 2: Compute mood vectors for all candidates
-        enriched = track_service.compute_batch_moods(candidates)
+        enriched = track_service.compute_batch_moods(candidates, db)
 
-        # Step 3: Encode the current state for the RL agent
         state = rl_agent.encode_state(
             current_mood=current_mood,
             recent_moods=recent_moods,
             time_of_day=time_of_day,
             device_type=device_type,
+            target_mood=predicted_mood,
         )
 
-        # Step 4: Score each candidate using the RL policy
+        q_values = rl_agent.score_batch(state, [s["mood_vector"] for s in enriched])
+
         scored_songs = []
-        for song in enriched:
-            song_mood = song["mood_vector"]
-            q_value = rl_agent.score(state, song_mood)
-
+        for song, q_value in zip(enriched, q_values):
             distance = mood_service.compute_mood_distance(current_mood, song["mood_vector"])
-
             scored_songs.append(
                 {
                     **song,
-                    # Raw Q-value from the policy network. Unbounded and often
-                    # negative before the agent has been trained — useful for
-                    # ranking, but it is not a percentage.
+                    # Raw Q-value: ranks candidates, not a percentage.
                     "confidence": round(q_value, 4),
                     "mood_distance": round(distance, 4) if song["mood_known"] else None,
-                    # A bounded 0..1 affinity the UI can show as a percentage:
-                    # how close this track sits to the listener's current mood
-                    # in the 5-D space (max separation is sqrt(5)).
-                    #
-                    # None when the track carried no genre to read a mood from.
-                    # Its vector is then the neutral centre, which sits zero
-                    # distance from every mood and would report as a perfect
-                    # match for everything — the agent still ranks it by
-                    # Q-value, but there is no affinity to show.
+                    # Bounded 0..1 affinity to the listener's current mood.
+                    # None when there was no mood to compare against.
                     "match": (
                         round(max(0.0, min(1.0, 1.0 - distance / _MAX_MOOD_DISTANCE)), 4)
                         if song["mood_known"]
@@ -159,10 +125,12 @@ class RecommendationService:
                 }
             )
 
-        # Sort by confidence (Q-value) descending
         scored_songs.sort(key=lambda x: x["confidence"], reverse=True)
-
         return scored_songs[:num_recommendations]
+
+    # ---------------------------------------------------------------- #
+    # Learning                                                          #
+    # ---------------------------------------------------------------- #
 
     def record_feedback(
         self,
@@ -170,28 +138,19 @@ class RecommendationService:
         selected_song: Dict,
         feedback: Dict,
         next_state: Optional[Dict] = None,
+        next_song: Optional[Dict] = None,
     ) -> Dict:
         """
-        Record user feedback and train the RL agent.
+        Record how a track was received and take a training step.
 
-        Args:
-            state: Previous state (mood, context)
-            selected_song: The song that was played
-            feedback: User feedback (played_fully, skipped, liked, etc.)
-            next_state: New state after the song
+        `state` is the listener's situation when the track started;
+        `next_state` is the situation when the following track started, and
+        `next_song` that track's mood. With both, the update bootstraps from
+        the transition the listener actually took.
         """
-        # Encode state
-        current_state_vec = rl_agent.encode_state(
-            current_mood=state["current_mood"],
-            recent_moods=state.get("recent_moods", []),
-            time_of_day=state.get("time_of_day", "afternoon"),
-            device_type=state.get("device_type", "web"),
-        )
-
-        # Song action
+        current_state_vec = self._encode(state)
         action_mood = selected_song["mood_vector"]
 
-        # Compute reward
         reward = rl_agent.compute_reward(
             was_played_fully=feedback.get("was_played_fully", False),
             was_skipped=feedback.get("was_skipped", False),
@@ -200,44 +159,40 @@ class RecommendationService:
             play_duration_ratio=feedback.get("play_duration_ratio", 0.0),
         )
 
-        # Next state
         if next_state:
-            next_state_vec = rl_agent.encode_state(
-                current_mood=next_state["current_mood"],
-                recent_moods=next_state.get("recent_moods", []),
-                time_of_day=next_state.get("time_of_day", "afternoon"),
-                device_type=next_state.get("device_type", "web"),
-            )
+            next_state_vec = self._encode(next_state)
             done = False
         else:
             next_state_vec = current_state_vec
             done = True
 
-        # Store experience
         rl_agent.store_experience(
             state=current_state_vec,
             action_song_mood=action_mood,
             reward=reward,
             next_state=next_state_vec,
             done=done,
+            next_action_song_mood=(next_song or {}).get("mood_vector"),
         )
 
-        # Train the agent
         loss = rl_agent.train_step(batch_size=32)
-
         self._last_reward = float(reward)
 
-        # Persist periodically so a crash costs at most a few tracks of
-        # learning, rather than the whole session.
         self._writes_since_save += 1
         if self._writes_since_save >= SAVE_EVERY_N_FEEDBACKS:
             self.save_checkpoint()
 
-        return {
-            "reward": reward,
-            "loss": loss,
-            "epsilon": rl_agent.epsilon,
-        }
+        return {"reward": reward, "loss": loss, "epsilon": rl_agent.epsilon}
+
+    @staticmethod
+    def _encode(state: Dict):
+        return rl_agent.encode_state(
+            current_mood=state["current_mood"],
+            recent_moods=state.get("recent_moods", []),
+            time_of_day=state.get("time_of_day", "afternoon"),
+            device_type=state.get("device_type", "web"),
+            target_mood=state.get("target_mood"),
+        )
 
 
 recommendation_service = RecommendationService()

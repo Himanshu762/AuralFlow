@@ -1,583 +1,265 @@
-# AuralFlow — Complete System Documentation
+# AuralFlow — System Documentation
 
-> An AI-driven music player that learns your taste in real-time using reinforcement learning. Runs as a standalone desktop app (Tauri) with a premium dark-mode UI, streaming real music via an embedded open-source music engine (Monochrome), and ranking tracks with a live PyTorch Q-learning agent.
+> A lossless music player with a DJ that listens. Every track's mood is
+> measured from the audio as it plays, the library becomes the DJ's candidate
+> pool, and a reinforcement-learning policy picks what follows along an arc
+> you choose. One correction — for the device, the record and the volume —
+> shapes the sound on top of your own EQ.
 
----
-
-## Table of Contents
-
-1. [What Is AuralFlow](#1-what-is-auralflow)
-2. [Architecture Overview](#2-architecture-overview)
-3. [Project Structure](#3-project-structure)
-4. [The Four Layers](#4-the-four-layers)
-5. [Data Flow](#5-data-flow)
-6. [The RL Agent — How It Learns](#6-the-rl-agent--how-it-learns)
-7. [The Monochrome Bridge — How Music Plays](#7-the-monochrome-bridge--how-music-plays)
-8. [Database Schema](#8-database-schema)
-9. [API Reference](#9-api-reference)
-10. [Design System](#10-design-system)
-11. [State Management](#11-state-management)
-12. [File Reference](#12-file-reference)
-13. [How To Run](#13-how-to-run)
-14. [Known Limitations](#14-known-limitations)
+This document describes the system as built. `README.md` is the overview and
+quick start; `implementation_plan.md` is the record of what changed and why.
 
 ---
 
-## 1. What Is AuralFlow
+## 1. The idea
 
-AuralFlow is a **standalone desktop music player** that uses a **reinforcement learning agent** to personalize what you hear. It doesn't just shuffle — it watches how you listen (play, skip, like, replay) and trains a neural network in real-time to predict what you'll want next.
+The original AuralFlow loop was:
 
-**Key properties:**
+1. read each track's mood from real audio features,
+2. predict where the listener's mood is heading,
+3. find candidates that match that prediction,
+4. rank them with the RL policy,
+5. queue the top pick automatically.
 
-| Property | Detail |
-|----------|--------|
-| **Music source** | Real tracks streamed via Monochrome (Tidal/open music APIs) |
-| **AI model** | PyTorch Q-learning agent with experience replay and epsilon-greedy exploration |
-| **Desktop app** | Tauri v2 (Rust native shell, 440x780 window) |
-| **Frontend** | Next.js 15, React 19, TypeScript, Zustand, Framer Motion |
-| **Backend** | FastAPI, SQLAlchemy, SQLite (local, zero-config) |
-| **Audio quality** | Supports Lossless, Hi-Res Lossless, Dolby Atmos metadata display |
-| **Visual** | WebGL shader background, glass-morphism panels, premium dark mode |
+Spotify's audio-features and recommendation endpoints disappeared, and the
+move to Monochrome gave playback but no mood data and no "find me songs like
+this" call. For a while the agent was a re-sorter for search results. The
+current build restores the loop with parts AuralFlow owns itself:
+
+| Step | How it works now |
+|---|---|
+| Mood from audio | The engine bridge measures the playing track from the live analyser: loudness, dynamics, spectral shape, tempo, major/minor, vocal-band energy. The backend maps that to the 5-D vector and caches it per track. |
+| Predict the mood | A session **arc** (hold, drift, lift, settle, focus, custom) turns the current mood into a target for the next track. |
+| Candidates | The **library**: every track the shell has seen (searches, plays, imports, album and artist lookups), with its measured mood, play history and likes. |
+| Rank | The policy's Q-value blended with fit to the target mood, plus novelty, recency and diversity terms. The policy's share grows as it trains. |
+| Queue | The pick is sent to the engine as "play next". The listener can play it now, or reject it — which is a training signal. |
 
 ---
 
-## 2. Architecture Overview
-
-The app is four layers stacked together:
+## 2. Architecture
 
 ```
-┌──────────────────────────────────────┐
-│  Tauri Desktop Shell (440x780)       │
-│  ┌────────────────────────────────┐  │
-│  │  Next.js Frontend (React)      │  │
-│  │  ┌──────────┐ ┌─────────────┐  │  │
-│  │  │ UI Tabs  │ │ Hidden      │  │  │
-│  │  │ Home     │ │ iframe      │  │  │
-│  │  │ Search   │ │ (Monochrome │  │  │
-│  │  │ Library  │ │  Engine)    │  │  │
-│  │  │ Queue    │ │             │  │  │
-│  │  │ Player   │ │ postMessage │  │  │
-│  │  └──────────┘ └──────┬──────┘  │  │
-│  └───────────────────────┼────────┘  │
-└──────────────────────────┼───────────┘
-                           │ HTTP
-               ┌───────────┴───────────┐
-               │  FastAPI Backend      │
-               │  ┌─────────────────┐  │
-               │  │ RL Agent        │  │
-               │  │ (PyTorch)       │  │
-               │  │ Mood Service    │  │
-               │  │ Session Tracker │  │
-               │  │ SQLite DB       │  │
-               │  └─────────────────┘  │
-               └───────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│ Tauri shell (desktop) — window, tray, starts the two services    │
+│                                                                  │
+│  ┌── Next.js UI ─────────────────────┐   ┌── Monochrome ───────┐ │
+│  │ Flow card · Mood meter · Library  │   │ hidden iframe       │ │
+│  │ Sound Signature · Queue · EQ      │◄─►│ + auralflow-bridge  │ │
+│  │ hooks/useMonochrome = the DJ loop │pm │ analyser → features │ │
+│  └───────────────┬───────────────────┘   │ layers → EQ filters │ │
+│                  │ HTTP                   │ devices, sinkId     │ │
+│                  ▼                        └─────────────────────┘ │
+│  ┌── FastAPI backend ────────────────────────────────────────┐   │
+│  │ /library   tracks, measured features, plays, likes, pool  │   │
+│  │ /dj        next pick along the arc, reject, modes         │   │
+│  │ /recommendations  score a list, feedback, one track's mood│   │
+│  │ SQLite · PyTorch Q-network (ml/agents) · checkpoints      │   │
+│  └───────────────────────────────────────────────────────────┘   │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
-**The critical insight**: AuralFlow does NOT play music itself. It uses Monochrome (a full music web app) as a hidden audio engine inside an iframe. The AuralFlow UI sends commands (af:search, af:play, af:seek) via postMessage to the iframe, and receives events (af:timeupdate, af:trackloaded, af:statechange) back.
+Four layers:
+
+- **Shell** (`desktop/src-tauri`): serves the bundled engine over localhost,
+  spawns the backend from its virtualenv, owns the window and tray.
+- **UI** (`frontend/`): static Next.js export; Zustand store; one hook
+  (`useMonochrome`) that speaks to the engine and runs the DJ loop.
+- **Engine bridge** (`engine/auralflow-bridge.js`): grafted into the vendored
+  Monochrome tree; translates `af:*` messages, measures audio, composes the
+  EQ layers, tracks output devices.
+- **Backend + ML** (`backend/`, `ml/`): library, DJ, agent, persistence.
 
 ---
 
-## 3. Project Structure
+## 3. The DJ loop, step by step
+
+Every time a track starts (`af:trackloaded`):
+
+1. **Mood of the new track.** `POST /recommendations/mood` returns the best
+   reading the library has: measured, artist prior, genre, or unknown.
+   The store's `currentMood` and `recentMoods` update.
+2. **Feedback for the previous track.** Play duration, skip, like — plus the
+   *next state* and the next track's mood, so the agent's target bootstraps
+   from the transition the listener actually took (SARSA-style).
+3. **Ask the DJ.** `POST /dj/next` with the mood, the arc, and what is already
+   about to play. The DJ returns a pick, runners-up, the arc target and a
+   reason in plain language.
+4. **Queue it.** If auto-queue is on, `af:queueadd {next: true}`.
+5. **While it plays**, `af:features` arrives every 3 s; the shell posts it to
+   `/library/features`, and once enough audio has been heard the mood
+   reading switches from the genre tag to the measurement.
+
+Rejecting a pick posts `/dj/reject` (reward −0.5) and asks again.
+
+### Arcs
+
+| Mode | Target for the next track |
+|---|---|
+| hold | mean of the last few moods and the current one |
+| drift | recency-weighted average plus momentum of the last transition |
+| lift | current + (+0.10 energy, +0.06 valence, +0.05 dance, −0.03 acoustic, −0.02 instrumental) |
+| settle | current + (−0.10, +0.02, −0.06, +0.06, +0.04) |
+| focus | 35 % of the way toward [0.45, 0.50, 0.35, 0.55, 0.80] |
+| custom | linear path from the current mood to a listener-set vector over N tracks |
+
+### Ranking
+
+For each candidate in the pool (minus the playing track, the next two queued,
+recent plays and rejections):
 
 ```
-AuralFlow/
-├── backend/                    # FastAPI + SQLAlchemy + RL integration
-│   ├── app/
-│   │   ├── api/endpoints/      # REST routes
-│   │   │   ├── auth.py         # Local login, default user creation
-│   │   │   ├── sessions.py     # Listening session CRUD + transitions
-│   │   │   └── recommendations.py  # /score, /feedback, /mood
-│   │   ├── core/
-│   │   │   ├── config.py       # Settings (SQLite URL, CORS)
-│   │   │   └── security.py     # JWT token creation (jose)
-│   │   ├── db/
-│   │   │   └── base.py         # SQLAlchemy engine + session factory
-│   │   ├── models/             # SQLAlchemy ORM models
-│   │   │   ├── user.py         # Users table
-│   │   │   ├── song.py         # Songs cache table
-│   │   │   ├── session.py      # Listening sessions table
-│   │   │   └── transition.py   # Song transitions table
-│   │   ├── services/           # Business logic
-│   │   │   ├── mood_service.py       # Mood vectors, trajectories, prediction
-│   │   │   ├── mood_mapper.py        # Genre to 5D mood vector lookup
-│   │   │   ├── track_service.py      # Track enrichment with mood data
-│   │   │   └── recommendation_service.py  # Orchestrates RL + mood scoring
-│   │   └── main.py             # FastAPI app, startup, router mounting
-│   ├── .env                    # Database URL, secrets
-│   └── venv/                   # Python virtual environment
-│
-├── frontend/                   # Next.js 15 (App Router)
-│   ├── app/
-│   │   ├── page.tsx            # Main shell — nav, control pod, tabs
-│   │   ├── layout.tsx          # Root layout
-│   │   └── globals.css         # CSS design system + glass panels
-│   ├── components/
-│   │   ├── HomeTab.tsx         # Home: hero, mood flow, discover, for-you
-│   │   ├── SearchTab.tsx       # Search: input, top result, track list
-│   │   ├── LibraryTab.tsx      # Library: liked, recent, filter chips
-│   │   ├── QueueTab.tsx        # Queue: now playing, up next, AI suggests
-│   │   ├── NowPlayingScreen.tsx # Full-screen: waveform, controls, badges
-│   │   └── ShaderBackground.tsx # WebGL animated background shader
-│   ├── hooks/
-│   │   └── useMonochrome.ts    # Bridge hook — iframe comms + AI scoring
-│   ├── lib/
-│   │   └── api.ts              # HTTP client for FastAPI backend
-│   └── stores/
-│       └── playerStore.ts      # Zustand store — all app state
-│
-├── ml/                         # Machine learning
-│   └── agents/
-│       └── music_rl_agent.py   # PyTorch RL agent (Q-learning + replay)
-│
-├── monochrome_app/             # Embedded music engine (Monochrome fork)
-│   ├── js/
-│   │   ├── auralflow-bridge.js # postMessage bridge
-│   │   ├── player.js           # Audio player
-│   │   ├── music-api.js        # Track search/streaming API
-│   │   └── ...                 # ~80 other Monochrome modules
-│   └── ...
-│
-├── desktop/                    # Tauri v2 desktop wrapper
-│   ├── src-tauri/
-│   │   ├── src/main.rs         # Rust entry point (8 lines)
-│   │   ├── tauri.conf.json     # Window size, CSP, build config
-│   │   └── Cargo.toml          # Rust dependencies
-│   └── ...
-│
-├── start.py                    # Unified launcher
-└── AGENTS.md                   # Repository guidelines
+score = w_q · sigmoid(z(Q))  +  (1 − w_q) · fit · (0.7 + 0.3·confidence)  + bonuses
+fit   = 1 − |mood − target| / √5           (0.3 when the mood is unknown)
+w_q   = min(0.55, 0.08 + training_steps / 400)
+bonuses: +0.06 never played · +0.05 liked · +0.10·mean reward
+         −0.08 same artist as now · −0.08·skip ratio · up to −0.25 played in the last 2 h
 ```
 
----
-
-## 4. The Four Layers
-
-### Layer 1: Desktop Shell (Tauri)
-
-A Rust-native desktop window (Tauri v2) that wraps the Next.js frontend.
-
-- Window: **440x780** (mobile phone form factor)
-- Min: 360x500, resizable
-- Transparent background
-- CSP allows iframe from localhost (Monochrome), images from Tidal CDN
-- Rust code: 8 lines. Just boots Tauri. All logic lives in web layer.
-
-### Layer 2: Frontend UI (Next.js)
-
-Next.js 15.5, React 19, TypeScript, Zustand, Framer Motion, Lucide Icons.
-
-The single-page app renders:
-1. **WebGL shader background** — animated noise blue/purple gradient
-2. **Top bar** — AuralFlow logo with animated pulse dot
-3. **Tab content** — AnimatePresence switches between 4 tabs
-4. **Control pod** — mini now-playing bar with art, info, play/pause, skip, progress
-5. **Bottom nav** — floating glass pill with 4 tab icons
-6. **Now Playing** — full-screen modal with waveform, volume
-
-**Screens:**
-
-| Screen | Purpose |
-|--------|---------|
-| Home | Hero card (first search result), mood flow indicator, recently played horizontal scroll, AI-ranked "For You" list |
-| Search | Glass search input with 400ms debounce, top result card with AI score, track list with quality badges |
-| Library | Filter chips (All/Liked/Recent), liked songs gradient banner, track list with hearts |
-| Queue | Now playing card with blurred art bg, numbered "up next", AI suggestions section |
-| Now Playing | Full-screen: bleed art bg, waveform progress (20 bars, memoized), transport controls, quality badge, volume |
-
-All screens are **mobile-first** — designed for 440px width.
-
-### Layer 3: Backend Intelligence (FastAPI)
-
-FastAPI, SQLAlchemy, PyTorch, NumPy, Pydantic.
-
-Startup flow:
-1. Creates all DB tables
-2. Auto-creates default user `local@auralflow.local`
-3. Mounts 3 routers under `/api/v1/`
-
-**Services:**
-
-| Service | Responsibility |
-|---------|----------------|
-| MoodService | Compute mood vectors, label moods, compute distance/trajectory, predict next mood |
-| MoodMapper | Genre to 5D mood vector lookup table (30+ genres) |
-| TrackService | Enriches track metadata with mood vector and label |
-| RecommendationService | Orchestrates mood prediction + RL scoring, returns ranked tracks |
-
-### Layer 4: Music Engine (Monochrome)
-
-Monochrome is a full open-source music web app (Vite + vanilla JS). AuralFlow embeds it in a hidden 1x1px iframe and controls it via postMessage.
-
-The bridge (`js/auralflow-bridge.js`) waits for the `Player` and `MusicAPI` singletons, then translates between the AuralFlow UI and Monochrome's internals. It is inert unless Monochrome is embedded — opening Monochrome directly is unaffected.
-
-Beyond transport, the bridge streams **real** telemetry to the shell:
-
-- `af:spectrum` — ten normalised FFT band levels read from the engine's shared `AnalyserNode`, plus the window RMS and playback position, at 15 fps while audio is playing. The shell's spectrum widget and the Now Playing waveform are drawn from this; nothing is simulated.
-- `streamInfo` on `af:trackloaded` / `af:state` — the codec, bit depth, sample rate and provider the player actually resolved, so the telemetry card shows measured figures rather than the track's advertised tier.
-- `af:quality` / `af:spatial` — the shell's Streaming Quality tier maps onto `player.setQuality()`, and the spatial toggle onto `audioContextManager.toggleBinaural()`, so those settings change playback instead of only being stored.
+With probability ε the DJ explores instead: a random pick from the top eight,
+preferring tracks whose mood has not been measured yet. The response says so,
+and the UI labels it a *Discovery*.
 
 ---
 
-## 5. Data Flow
+## 4. Measuring mood from audio
 
-### Search → Play → Learn (Full Cycle)
+The bridge runs one 30 Hz analysis tick off the engine's shared
+`AnalyserNode` while audio plays. Per frame it reads the byte FFT and the
+time-domain window and accumulates:
 
-1. **User types** "ambient" in search
-2. **Frontend** sends `af:search {query: "ambient"}` to Monochrome iframe
-3. **Monochrome** calls `MusicAPI.searchTracks("ambient")`, serializes results
-4. **Monochrome** emits `af:searchresults {results: [...]}` back to parent
-5. **Frontend** stores results in Zustand, fires off `POST /score` to backend
-6. **Backend** computes mood vectors for each candidate, runs RL agent (`policy_net(state+mood)`)
-7. **Backend** returns ranked tracks with Q-value confidence scores
-8. **Frontend** stores scores, displays in "For You" section sorted by AI confidence
-9. **User taps** a track
-10. **Frontend** sends `af:play {trackId, tracks, searchQuery}` to iframe
-11. **Monochrome** sets queue, starts playback, emits `af:trackloaded`
-12. **Frontend** calls `POST /mood` to get mood vector for the track
-13. **Monochrome** sends `af:timeupdate` every 250ms with currentTime/duration
-14. **Track ends**: Monochrome emits `af:statechange {state: "ended"}`
-15. **Frontend** sends `POST /feedback` with play duration, skip/like data
-16. **Backend** computes reward, stores experience, runs training step on RL agent
-17. **RL agent** updates weights via backprop on replay buffer sample
-18. **Next search** results are ranked with the improved model
+| Measurement | How |
+|---|---|
+| loudness (dBFS), peak, crest factor | time-domain RMS and peak |
+| dynamic range | p95 − p10 of frame loudness |
+| spectral centroid, rolloff (85 %), flatness | from the linear-magnitude spectrum |
+| spectral flux | positive change since the previous frame, normalised |
+| band ratios | energy below 150 Hz, 300–3400 Hz (vocal band), above 4 kHz |
+| chroma | energy per pitch class from spectral *peaks* only, so drums and noise do not swamp it |
+| tempo, beat strength | autocorrelation of the flux series over 60–200 BPM, parabolic refinement, octave choice nearest ~115 BPM |
+| key, major/minor | Krumhansl–Kessler profiles correlated against the chroma |
 
----
+`backend/app/services/feature_service.py` maps these onto the vector:
 
-## 6. The RL Agent — How It Learns
+- **energy** ← loudness, flux, brightness, tempo
+- **valence** ← major mode, tempo, brightness (a proxy, and labelled as one)
+- **danceability** ← beat strength, tempo near 118 BPM, low-end share
+- **acousticness** ← low flatness, high crest factor, dynamic range, little top end
+- **instrumentalness** ← inverse of steady *and modulated* vocal-band energy
 
-### Neural Network Architecture
+Confidence is `seconds / 45`, capped at 1; readings under 0.3 are stored but
+not trusted, and the library falls back to an artist prior or the genre tag.
+A fuller measurement is never overwritten by a shorter later one.
 
-```
-MoodPolicyNetwork (17 dims in → 1 Q-value out)
-├── Linear(17, 128) + ReLU + Dropout(0.2)
-├── Linear(128, 128) + ReLU + Dropout(0.2)
-├── Linear(128, 64) + ReLU
-└── Linear(64, 1)  → Q-value for this (state, action) pair
-```
-
-### State Encoding (12 dimensions)
-
-| Dims | Source | Description |
-|------|--------|-------------|
-| 0-4 | current_mood | Current 5D mood vector [energy, valence, danceability, acousticness, instrumentalness] |
-| 5-9 | recent_moods | Average of last 10 mood vectors |
-| 10 | time_of_day | morning=0.25, afternoon=0.5, evening=0.75, night=1.0 |
-| 11 | device_type | web=0.33, mobile=0.66, desktop=1.0 |
-
-### Action Encoding (5 dimensions)
-
-The candidate song's mood vector [energy, valence, danceability, acousticness, instrumentalness]
-
-**Total input**: 12 (state) + 5 (action) = **17 dimensions**
-
-### Reward Function
-
-| User Behavior | Reward |
-|---------------|--------|
-| Liked or replayed | **+1.0** |
-| Played fully (>80%) | **+0.5** |
-| Partial play (20-80%) | **+0.2 to +0.5** (scaled) |
-| Skipped mid-song | **-0.3** |
-| Skipped early (<20%) | **-1.0** |
-
-### Training Details
-
-- **Algorithm**: Q-Learning with experience replay
-- **Replay buffer**: 10,000 experiences (deque)
-- **Batch size**: 32
-- **Exploration**: epsilon-greedy, starts 0.3, decays 0.995/step, min 0.05
-- **Discount factor**: 0.95
-- **Optimizer**: Adam (lr=0.001)
-- **Loss**: MSE between predicted Q and Bellman target
-
-### Mood Mapper (30+ genres)
-
-The genre-to-mood mapping covers ambient, classical, jazz, blues, folk, lo-fi, chill, downtempo, pop, dance, electronic, techno, trance, house, hip-hop, rap, rock, metal, thrash metal, indie, alternative, country, R&B, soul, funk, reggae, and world music. Each maps to a 5D vector. Unknown genres get the default [0.5, 0.5, 0.5, 0.5, 0.5].
+`node engine/test/selftest.mjs` drives the analyser with a synthetic 120 BPM
+C-major signal and checks tempo, key, mode and the EQ layer arithmetic.
 
 ---
 
-## 7. The Monochrome Bridge — How Music Plays
+## 5. Sound Signature
 
-### Bridge Protocol
+The equaliser is layered. The listener's own bands are the base; three
+automatic layers stack on top, summed, clamped to ±12 dB and pushed to the
+running filters through `applyTransientGains`, which never writes to the
+engine's storage:
 
-| Direction | Format | Messages |
-|-----------|--------|----------|
-| Parent → Bridge | `{ type: "af:<cmd>", ...data }` | search, play, pause, resume, toggle, seek, volume, next, prev, getstate, ping |
-| Bridge → Parent | `{ type: "af:<evt>", ...data }` | ready, timeupdate (250ms), statechange, trackloaded, searchresults, state, error, pong |
+| Layer | Source | Persistence |
+|---|---|---|
+| device | AutoEQ correction matched to the output device's name, or chosen by hand | per device, in `localStorage` |
+| track | the adaptive stabiliser's live correction toward the listener's long-term balance | none (recomputed) |
+| loudness | equal-loudness compensation growing as volume drops (bass shelf up to +9 dB, treble up to +3 dB) | preference only |
 
-### Track Serialization
-
-The bridge converts Monochrome's internal track objects to:
-```json
-{
-  "id": "string",
-  "title": "string",
-  "artist": "string",
-  "album": "string",
-  "albumId": "string|null",
-  "duration": 0,
-  "audioQuality": "HI_RES_LOSSLESS|LOSSLESS|...",
-  "audioModes": ["DOLBY_ATMOS"],
-  "cover": "https://resources.tidal.com/.../320x320.jpg",
-  "coverLarge": "https://resources.tidal.com/.../640x640.jpg",
-  "genre": "string",
-  "trackNumber": 0,
-  "isUnavailable": false
-}
-```
-
-### Frontend Hook (useMonochrome)
-
-The hook:
-1. Manages the iframe ref and URL
-2. Listens for all `af:` events from the iframe
-3. Writes state changes directly to Zustand
-4. Triggers AI automatically:
-   - On `searchresults` → calls `POST /score` to rank tracks by confidence
-   - On `trackloaded` → calls `POST /mood` to compute mood vector
-   - On track change → calls `POST /feedback` with play duration for previous track
-5. Exposes clean API: `search()`, `play()`, `toggle()`, `next()`, `prev()`, `seek()`, `volume()`
+Output devices come from `navigator.mediaDevices.enumerateDevices()`; the
+`devicechange` event re-resolves the profile, and `setSinkId` switches the
+output where the platform allows. Where the platform hides device names, the
+listener can name the device and the AutoEQ match runs on that. Auto-matching
+only trusts a match where every distinctive token of the device name appears
+in the AutoEQ entry's name.
 
 ---
 
-## 8. Database Schema
+## 6. Data
 
-**Engine**: SQLite (local file `backend/auralflow.db`, zero-config)
+**SQLite** at `backend/auralflow.db` (or `DATABASE_URL`). `ensure_schema()`
+creates tables and adds any column a model has gained since, so upgrades need
+no migration step.
 
-### users
-| Column | Type | Description |
-|--------|------|-------------|
-| id | Integer PK | Auto-increment |
-| email | String UNIQUE | Default: local@auralflow.local |
-| display_name | String | Default: "Local Audiophile" |
-| mood_bias | Float | Overall mood tendency |
-| avg_skip_rate | Float | Running average skip rate |
-| avg_session_length | Float | Running average session minutes |
-| is_active | Boolean | Default: true |
-| created_at / updated_at | DateTime | Auto-managed |
+### songs — the library
 
-### sessions
-| Column | Type | Description |
-|--------|------|-------------|
-| id | Integer PK | |
-| user_id | FK → users | |
-| started_at / ended_at | DateTime | Session boundaries |
-| mood_start / mood_end | JSON | 5D mood vectors |
-| mood_trajectory | JSON | Array of mood states over time |
-| total_songs_played/skipped | Integer | Counters |
-| avg_energy / avg_valence | Float | Session-level stats |
-| device_type | String | web, mobile, desktop |
-| time_of_day | String | morning, afternoon, evening, night |
+| Column | Meaning |
+|---|---|
+| track_id, name, artist, artist_id, album, album_id, genre, duration_ms, cover, cover_large, audio_quality, audio_modes | catalogue metadata |
+| source, first_seen_at | where the track came from |
+| energy … instrumentalness, mood_vector, mood_source, mood_confidence | the mood and its provenance (`measured` / `artist` / `genre` / `unknown`) |
+| features, analysis_seconds, analysed_at | the raw measurement |
+| play_count, skip_count, liked, last_played_at, reward_total, reward_count | listening history |
 
-### transitions
-| Column | Type | Description |
-|--------|------|-------------|
-| id | Integer PK | |
-| session_id | FK → sessions | |
-| from_song_id / to_song_id | String | Track IDs |
-| was_played_fully/skipped/liked/replayed | Boolean | User behavior signals |
-| play_duration_ms | Integer | How long the song was played |
-| reward | Float | Computed RL reward |
+`users`, `sessions` and `transitions` remain for session analytics; the UI does
+not call the sessions endpoints.
 
-### songs
-| Column | Type | Description |
-|--------|------|-------------|
-| id | Integer PK | |
-| track_id | String UNIQUE | Monochrome track ID |
-| name / artist / album / genre | String | Metadata |
-| energy / valence / danceability / acousticness / instrumentalness | Float | Audio features |
-| mood_vector | JSON | 5D mood vector |
+### Agent checkpoint
+
+`ml/models/music_rl_agent.pt` (override with `AURALFLOW_MODEL_PATH`): weights,
+optimiser, ε, lifetime step count, a bounded replay slice, and the state
+layout. A checkpoint with a different layout is ignored and the agent starts
+fresh. Written every five feedback events and on shutdown.
 
 ---
 
-## 9. API Reference
+## 7. API
 
-**Base URL**: `http://localhost:8000/api/v1`
+Base URL `http://localhost:8000/api/v1`.
 
-### POST /recommendations/score
-Score and rank candidate tracks using the RL agent.
-
-Request: `{ candidates: [{id, title, artist, genre}], current_mood: [5 floats], recent_moods: [[5 floats]], time_of_day, device_type, num_recommendations }`
-
-Response: `{ recommendations: [{...track, confidence, mood_vector, mood_label, mood_distance, predicted_mood}], predicted_mood, count }`
-
-### POST /recommendations/feedback
-Submit user feedback to train the RL agent.
-
-Request: `{ track_id, song_mood_vector, state: {current_mood, recent_moods}, was_played_fully, was_skipped, was_liked, was_replayed, play_duration_ms, total_duration_ms }`
-
-Response: `{ success, reward, training_loss, exploration_rate }`
-
-### POST /recommendations/mood
-Compute mood vector for a single track.
-
-Request: `{ id, title, artist, genre }`
-
-Response: `{ track_id, mood_vector: [5 floats], mood_label: "Danceable & Rhythmic" }`
-
-### POST /sessions/start
-Start a listening session. Request: `{ device_type, time_of_day, mood_start }`
-
-### PUT /sessions/{id}/end
-End a listening session with stats.
-
-### POST /sessions/{id}/transition
-Record a song transition with behavior signals.
-
-### GET /auth/login
-Auto-login: creates default user on first call, returns JWT redirect.
-
-### GET /auth/me
-Get current user info.
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/library/tracks` | upsert tracks `{tracks, source}` |
+| POST | `/library/features` | store a measurement `{track_id, seconds, features, final}` → the resolved mood |
+| POST | `/library/event` | `play`, `like`, `unlike` |
+| GET | `/library/pool` | the candidate pool with moods and history |
+| GET | `/library/stats` | counts by mood source |
+| POST | `/dj/next` | the pick, runners-up, target, reason |
+| POST | `/dj/reject` | a rejected pick (reward −0.5) |
+| GET | `/dj/modes` | arc modes, policy weight, exploration |
+| POST | `/recommendations/score` | rank a list the shell hands over |
+| POST | `/recommendations/feedback` | feedback with optional `next_state` and `next_song_mood_vector` |
+| POST | `/recommendations/mood` | one track's mood, source, confidence and measured summary |
+| GET | `/recommendations/stats` | exploration rate, replay size, steps, last reward |
 
 ---
 
-## 10. Design System
+## 8. The agent
 
-### Color Palette
-- **Primary**: `#3e90ff` (AuralFlow Blue)
-- **Background**: `#000000` (Pure black)
-- **Surface**: `#121317` (Cards)
-- **Text**: `#e3e2e7` (Primary)
-- **Text Dim**: `#8b91a0` (Secondary)
-- **Glass**: `rgba(18, 19, 23, 0.6)`
+`ml/agents/music_rl_agent.py`. State (17): current mood (5), mean of recent
+moods (5), arc target (5), time of day (1), device (1). Action (5): the
+candidate's mood. Q-network: 22 → 128 → 128 → 64 → 1 with dropout, scored in
+eval mode so a score is reproducible.
 
-### Quality Badge Colors
-| Quality | Color |
-|---------|-------|
-| Hi-Res Lossless | Purple (`#a855f7`) |
-| Lossless | Emerald (`#10b981`) |
-| Dolby Atmos | Blue (`#3b82f6`) |
+Rewards: +1 liked or replayed, +0.5 played fully, +0.2..0.5 partial, −0.3
+skipped mid-song, −1 skipped early, −0.5 rejected before playing.
 
-### Glass Panels
-```css
-background: rgba(18, 19, 23, 0.6);
-backdrop-filter: blur(20px);
-border: 1px solid rgba(255, 255, 255, 0.05);
-box-shadow: 0 8px 32px rgba(0, 0, 0, 0.37);
-```
-
-### Typography
-- Font: Inter (Google Fonts, 400/600/700/900)
-- Headlines: 24-32px, weight 600-700, tight tracking
-- Body: 13-15px, weight 400
-- Labels: 9-11px, weight 600-700, uppercase
-
-### WebGL Shader
-Full-screen animated noise shader with AuralFlow Blue and Hi-Res Purple stops, perlin noise, mouse-reactive glow, vignette, runs at display refresh rate.
+Training: experience replay, batch 32, Adam 1e-3, γ 0.95, ε from 0.3 decaying
+by 0.995 per step to 0.05. Targets bootstrap from the *next action actually
+taken* when the following track is known.
 
 ---
 
-## 11. State Management
+## 9. Running and testing
 
-**Engine**: Zustand (single global store, no providers)
-
-| Group | Fields | Updated By |
-|-------|--------|------------|
-| Navigation | activeTab | Bottom nav clicks |
-| Playback | track, playing, loading, currentTime, duration, volume | Monochrome bridge events |
-| Queue | queue, queueIndex | Track selection |
-| Search | searchResults, searchQuery, searching | Bridge searchresults event |
-| Library | liked (Set), recentlyPlayed (max 50) | User likes, trackloaded event |
-| AI | aiScores (Map), currentMood, recentMoods | Backend /score and /mood responses |
-| UI | isExpanded, monoReady | User actions, bridge ready event |
-
----
-
-## 12. File Reference
-
-### Frontend (11 files)
-
-| File | Lines | Purpose |
-|------|-------|---------|
-| page.tsx | 257 | App shell, nav, control pod, iframe |
-| globals.css | ~200 | Full design system |
-| playerStore.ts | 157 | Zustand state store |
-| useMonochrome.ts | 171 | Bridge hook |
-| api.ts | 133 | Backend HTTP client |
-| HomeTab.tsx | 185 | Home screen |
-| SearchTab.tsx | ~200 | Search screen |
-| LibraryTab.tsx | ~130 | Library screen |
-| QueueTab.tsx | ~180 | Queue screen |
-| NowPlayingScreen.tsx | ~250 | Full-screen player |
-| ShaderBackground.tsx | 172 | WebGL shader |
-
-### Backend (12 files)
-
-| File | Lines | Purpose |
-|------|-------|---------|
-| main.py | 64 | FastAPI app + startup |
-| config.py | 51 | Settings (SQLite) |
-| security.py | 34 | JWT creation |
-| base.py | 25 | SQLAlchemy engine |
-| user.py | 26 | User model |
-| song.py | 27 | Song cache model |
-| session.py | 35 | Session model |
-| transition.py | ~35 | Transition model |
-| recommendation_service.py | 171 | RL orchestration |
-| mood_service.py | 169 | Mood math |
-| mood_mapper.py | 54 | Genre-to-mood table |
-| track_service.py | 47 | Track enrichment |
-
-### ML (1 file)
-
-| File | Lines | Purpose |
-|------|-------|---------|
-| music_rl_agent.py | 305 | Full RL agent: network, encoding, training, rewards, save/load |
-
-### Bridge (1 file)
-
-| File | Lines | Purpose |
-|------|-------|---------|
-| auralflow-bridge.js | 262 | postMessage protocol between AuralFlow and Monochrome |
-
----
-
-## 13. How To Run
-
-### Prerequisites
-- Python 3.11+ with venv
-- Node.js 18+
-- Rust + Cargo (for Tauri desktop build)
-- Xcode CLT (macOS: `sudo xcodebuild -license`)
-
-### Quick Start
 ```bash
-python start.py          # Monochrome + Backend + Frontend
-python start.py --app    # + Tauri desktop window
+cd desktop && npm run dev                 # the app, services included
+python3 start.py                          # browser mode with health checks
+
+cd backend && venv/bin/python -m pytest   # 50 specs: agent, features, library, DJ, API
+cd frontend && npm run lint && npm run type-check && npm run build
+node engine/test/selftest.mjs             # bridge analysis + signature arithmetic
 ```
 
-### Services
-| Service | Port | Command |
-|---------|------|---------|
-| Monochrome | 5173 | `cd monochrome_app && npm run dev` |
-| Backend | 8000 | `cd backend && source venv/bin/activate && uvicorn app.main:app --reload` |
-| Frontend | 3000 | `cd frontend && npm run dev` |
-| Desktop | — | `cd desktop && npx @tauri-apps/cli dev` |
+## 10. Known limitations
 
-### Verify Backend
-```bash
-cd backend && source venv/bin/activate
-python -c "
-from app.services.recommendation_service import recommendation_service
-r = recommendation_service.score_candidates(
-    candidates=[{'id':'1','title':'Test','artist':'A','genre':'rock'}],
-    current_mood=[0.5,0.5,0.5,0.5,0.5], recent_moods=[]
-)
-print(f'RL Agent confidence: {r[0][\"confidence\"]:.4f}')
-"
-```
-
----
-
-## 14. Known Limitations
-
-| Area | Limitation | Workaround |
-|------|-----------|------------|
-| Music source | Depends on Monochrome's upstream APIs | Monochrome community maintains proxies |
-| RL cold start | Agent is random until ~30-50 plays | Initial "lossless" query seeds good content |
-| Mood heuristic | Static genre lookup, not per-track audio analysis | Future: audio feature APIs |
-| Offline | Requires internet for streaming | Download support possible via Monochrome |
-| Single user | No multi-user support | JWT infra exists but auto-login only |
-| Model persistence | RL resets on restart | save/load exists, needs auto-trigger |
-| Supabase dead | Original PostgreSQL is offline | Switched to local SQLite |
+| Area | Limitation |
+|---|---|
+| Valence | A proxy from mode, tempo and brightness; it is labelled as measured but it is not a listener rating. |
+| Vocal detection | Band-energy modulation, not a source separator; instrumental tracks with busy midrange can read as vocal. |
+| Unheard tracks | Mood comes from an artist prior or genre until the track has played ~45 s. Discovery picks exist to fill those in. |
+| Output devices | Browsers withhold device names until a media permission is granted; some webviews expose no output list at all. Naming the device by hand covers both. |
+| Cold start | Until ~400 training steps the arc's target dominates the policy, by design. |
+| Mobile | Phones run the UI only; the engine and backend live on a machine on the LAN. |

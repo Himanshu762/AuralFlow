@@ -4,18 +4,20 @@ import React from "react";
 import { motion } from "framer-motion";
 import { Play, Shuffle, AudioLines, Heart, BadgeCheck, Disc3, Radio, Usb } from "lucide-react";
 import { usePlayerStore, type Track } from "../stores/playerStore";
-import { fmtTime, qualityBadge, streamCodec, pcmRate, MOOD_EMOJI, MOOD_DIMENSIONS, rankTracks } from "../lib/format";
+import { fmtTime, qualityBadge, streamCodec, pcmRate, MOOD_EMOJI, rankTracks } from "../lib/format";
 import SectionHeading from "./SectionHeading";
+import FlowCard from "./FlowCard";
+import MoodMeter from "./MoodMeter";
 
 interface Props {
   onPlay: (track: Track) => void;
   compact: boolean;
+  dj: { playPick: () => void; reject: () => void; refresh: () => void; queuePick: () => void };
 }
 
-export default function HomeTab({ onPlay, compact }: Props) {
+export default function HomeTab({ onPlay, compact, dj }: Props) {
   const searchResults = usePlayerStore((s) => s.searchResults);
   const recentlyPlayed = usePlayerStore((s) => s.recentlyPlayed);
-  const currentMood = usePlayerStore((s) => s.currentMood);
   const track = usePlayerStore((s) => s.track);
   const aiScores = usePlayerStore((s) => s.aiScores);
   const aiRanking = usePlayerStore((s) => s.aiRanking);
@@ -27,6 +29,8 @@ export default function HomeTab({ onPlay, compact }: Props) {
   const settings = usePlayerStore((s) => s.settings);
   const monoReady = usePlayerStore((s) => s.monoReady);
   const streamInfo = usePlayerStore((s) => s.streamInfo);
+  const djState = usePlayerStore((s) => s.dj);
+  const alternates = djState.alternates;
 
   const featured = searchResults[0];
   const featuredBadge = featured ? qualityBadge(featured, track?.id === featured.id ? streamInfo : null) : null;
@@ -40,7 +44,7 @@ export default function HomeTab({ onPlay, compact }: Props) {
   const moodLabel = track?.mood_label || "Not read yet";
   const moodEmoji = MOOD_EMOJI[moodLabel] || "🎵";
 
-  if (!featured && recent.length === 0) {
+  if (!featured && recent.length === 0 && !djState.pick) {
     return (
       <div className="flex flex-col items-center justify-center py-28 text-center">
         <AudioLines className={`w-12 h-12 mb-4 ${monoReady ? "text-outline" : "text-outline/50"}`} />
@@ -72,10 +76,27 @@ export default function HomeTab({ onPlay, compact }: Props) {
 
   return (
     <div className={`flex flex-col ${compact ? "gap-7" : "gap-9"} max-w-[1500px]`}>
-      {/* ================= Featured card ================= */}
+      {/* ================= The DJ ================= */}
+      <section>
+        <SectionHeading
+          title="Flow"
+          subtitle="Pick an arc; the DJ chooses what follows from your library and queues it"
+          onSeeAll={() => setActiveTab("settings")}
+          seeAllLabel="Tune"
+        />
+        <FlowCard
+          compact={compact}
+          onPlayPick={dj.playPick}
+          onReject={dj.reject}
+          onRefresh={dj.refresh}
+          onQueuePick={dj.queuePick}
+        />
+      </section>
+
+      {/* ================= Featured search result ================= */}
       {featured && (
         <section>
-          <SectionHeading title="Up Next For You" subtitle="Chosen by the agent from your current flow" />
+          <SectionHeading title="Top Result" subtitle="From your last search" />
           <div
             className={`relative overflow-hidden rounded-2xl bg-surface-low ring-1 ring-white/8 ${
               compact ? "p-4" : "p-5"
@@ -87,11 +108,7 @@ export default function HomeTab({ onPlay, compact }: Props) {
             {/* Eyebrow chip row, from native_listen_now */}
             <div className="relative z-10 flex flex-wrap items-center gap-2 mb-4">
               <span className="text-label-sm uppercase tracking-[0.12em] text-outline font-bold">
-                Top pick for you
-              </span>
-              <span className="w-1 h-1 rounded-full bg-outline/60" />
-              <span className="px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-surface-high text-on-surface-variant">
-                Daily curated
+                Top result
               </span>
               {featuredBadge && (
                 <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${featuredBadge.cls}`}>
@@ -234,8 +251,8 @@ export default function HomeTab({ onPlay, compact }: Props) {
       {/* ================= Mood Flow ================= */}
       <section>
         <SectionHeading
-          title="Mood Flow"
-          subtitle="The five dimensions the agent steers by"
+          title="Mood"
+          subtitle="Measured from the audio as it plays; the ticks are where the arc is heading"
           onSeeAll={() => setActiveTab("settings")}
           seeAllLabel="Tune"
         />
@@ -244,25 +261,11 @@ export default function HomeTab({ onPlay, compact }: Props) {
             <span className="text-4xl">{moodEmoji}</span>
             <div className="min-w-0">
               <p className="text-headline-md text-on-surface truncate">{moodLabel}</p>
-              <p className="text-[12px] text-outline mt-0.5">Agent adapting to your flow</p>
+              <p className="text-[12px] text-outline mt-0.5">{track ? track.title : "Nothing playing"}</p>
             </div>
           </div>
-
-          <div className={`flex-1 grid ${compact ? "grid-cols-2 gap-x-5 gap-y-3" : "grid-cols-5 gap-4"}`}>
-            {MOOD_DIMENSIONS.map((dim, i) => (
-              <div key={dim}>
-                <div className="flex items-baseline justify-between mb-1.5">
-                  <span className="text-[11px] text-on-surface-variant truncate">{dim}</span>
-                  <span className="text-[11px] text-outline font-mono">{(currentMood[i] ?? 0).toFixed(2)}</span>
-                </div>
-                <div className="h-1.5 rounded-full bg-surface-high overflow-hidden">
-                  <div
-                    className="h-full bg-primary-container rounded-full transition-all duration-700 ease-out"
-                    style={{ width: `${Math.max(3, Math.min(100, (currentMood[i] ?? 0) * 100))}%` }}
-                  />
-                </div>
-              </div>
-            ))}
+          <div className="flex-1 min-w-0">
+            <MoodMeter compact={compact} />
           </div>
         </div>
       </section>
@@ -351,19 +354,76 @@ export default function HomeTab({ onPlay, compact }: Props) {
         </div>
       </section>
 
-      {/* ================= For You ================= */}
-      {forYou.length > 0 && (
+      {/* ================= Also in the running ================= */}
+      {alternates.length > 0 && (
         <section>
           <SectionHeading
             accent
             title={
               <span className="flex items-center gap-2">
-                For You
+                Also in the Running
                 <AudioLines className="w-4 h-4 text-primary animate-pulse" />
               </span>
             }
-            subtitle="Ranked against your mood vector"
+            subtitle="The DJ's runners-up from your library, for this arc"
             onSeeAll={() => setActiveTab("queue")}
+          />
+          <div className={`grid gap-2 ${compact ? "grid-cols-1" : "grid-cols-1 xl:grid-cols-2"}`}>
+            {alternates.map((t) => {
+              const badge = qualityBadge(t);
+              const score = typeof t.fit === "number" ? t.fit : undefined;
+              return (
+                <motion.button
+                  key={t.id}
+                  type="button"
+                  onClick={() => onPlay(t)}
+                  whileTap={{ scale: 0.99 }}
+                  transition={{ type: "spring", stiffness: 300, damping: 25 }}
+                  className="flex items-center gap-3.5 p-2.5 rounded-xl text-left hover:bg-surface-container transition-colors"
+                >
+                  {t.cover ? (
+                    <img src={t.cover} alt="" className="w-12 h-12 rounded-lg object-cover flex-shrink-0 ring-1 ring-white/10" />
+                  ) : (
+                    <div className="w-12 h-12 rounded-lg bg-surface-high flex-shrink-0" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[14px] text-on-surface truncate font-medium">{t.title}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      {badge && (
+                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider flex-shrink-0 ${badge.cls}`}>
+                          {badge.label}
+                        </span>
+                      )}
+                      <span className="text-[11px] text-outline truncate">{t.artist}</span>
+                      <span className={`text-[9px] uppercase tracking-wider font-bold flex-shrink-0 ${t.mood_source === "measured" ? "text-lossless" : "text-outline"}`}>
+                        {t.mood_source === "measured" ? "Measured" : t.mood_source === "artist" ? "Artist prior" : t.mood_source === "genre" ? "Genre" : "Unread"}
+                      </span>
+                    </div>
+                  </div>
+                  {liked.has(t.id) && <Heart className="w-3.5 h-3.5 text-danger fill-current flex-shrink-0" />}
+                  {score !== undefined && (
+                    <div className="flex flex-col items-end gap-1 flex-shrink-0 w-12">
+                      <span className="text-[10px] text-primary font-bold">{Math.round(score * 100)}%</span>
+                      <div className="w-full h-1 bg-surface-high rounded-full overflow-hidden">
+                        <div className="h-full bg-primary rounded-full" style={{ width: `${Math.min(100, Math.max(0, score * 100))}%` }} />
+                      </div>
+                    </div>
+                  )}
+                </motion.button>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* ================= For You (ranked search results) ================= */}
+      {forYou.length > 0 && (
+        <section>
+          <SectionHeading
+            accent
+            title="From Your Search"
+            subtitle="Ranked against your current mood"
+            onSeeAll={() => setActiveTab("search")}
           />
           <div className={`grid gap-2 ${compact ? "grid-cols-1" : "grid-cols-1 xl:grid-cols-2"}`}>
             {forYou.map((t) => {

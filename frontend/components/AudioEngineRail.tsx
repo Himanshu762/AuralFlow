@@ -2,14 +2,17 @@
 
 import React from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { GripVertical, Sparkles, Radio, X, AudioLines } from "lucide-react";
+import { GripVertical, Sparkles, X, AudioLines, Headphones, Speaker, Usb } from "lucide-react";
 import { usePlayerStore, type RailTab, type Track } from "../stores/playerStore";
-import { fmtTime, qualityBadge, streamCodec, pcmRate, formatSpec, MOOD_DIMENSIONS, rankTracks } from "../lib/format";
+import { fmtTime, qualityBadge, streamCodec, pcmRate, formatSpec } from "../lib/format";
+import MoodMeter from "./MoodMeter";
+import FlowCard from "./FlowCard";
 
 const BANDS = ["32", "64", "125", "250", "500", "1k", "2k", "4k", "8k", "16k"] as const;
 
 interface Props {
   onPlay: (track: Track) => void;
+  dj: { playPick: () => void; reject: () => void; refresh: () => void; queuePick: () => void };
 }
 
 /**
@@ -18,25 +21,25 @@ interface Props {
  * The spectrum is real: the Monochrome bridge samples the engine's shared
  * AnalyserNode and posts ten normalised band levels to the shell.
  */
-export default function AudioEngineRail({ onPlay }: Props) {
+export default function AudioEngineRail({ onPlay, dj }: Props) {
   const track = usePlayerStore((s) => s.track);
   const playing = usePlayerStore((s) => s.playing);
   const railTab = usePlayerStore((s) => s.railTab);
   const setRailTab = usePlayerStore((s) => s.setRailTab);
   const setRailOpen = usePlayerStore((s) => s.setRailOpen);
-  const searchResults = usePlayerStore((s) => s.searchResults);
-  const currentMood = usePlayerStore((s) => s.currentMood);
-  const aiScores = usePlayerStore((s) => s.aiScores);
-  const aiRanking = usePlayerStore((s) => s.aiRanking);
-  const settings = usePlayerStore((s) => s.settings);
-  const setSetting = usePlayerStore((s) => s.setSetting);
+  const setActiveTab = usePlayerStore((s) => s.setActiveTab);
   const streamInfo = usePlayerStore((s) => s.streamInfo);
   const spectrum = usePlayerStore((s) => s.spectrum);
+  const signature = usePlayerStore((s) => s.signature);
+  const eqOn = usePlayerStore((s) => s.eq.adaptive.on);
+  const queue = usePlayerStore((s) => s.queue);
+  const queueIndex = usePlayerStore((s) => s.queueIndex);
+  const djState = usePlayerStore((s) => s.dj);
 
   const badge = track ? qualityBadge(track, streamInfo) : null;
 
-  const currentIdx = track ? searchResults.findIndex((t) => t.id === track.id) : -1;
-  const upNext = (currentIdx >= 0 ? searchResults.slice(currentIdx + 1) : searchResults).slice(0, 8);
+  /* The engine's own queue, after the playing position. */
+  const upNext = queue.filter((_, i) => i > queueIndex).slice(0, 8);
 
   const tabs: { id: RailTab; label: string; dot?: boolean }[] = [
     { id: "engine", label: "Engine" },
@@ -99,18 +102,7 @@ export default function AudioEngineRail({ onPlay }: Props) {
                 <HoloDisc />
                 <TelemetryCard />
                 <SpectrumWidget levels={spectrum} active={playing} />
-                <div className="rounded-xl bg-surface-container p-4 flex items-center gap-3">
-                  <Radio className="w-5 h-5 text-primary flex-shrink-0" />
-                  <div className="min-w-0 flex-1">
-                    <div className="text-label-md font-semibold text-on-surface">Head-Tracking HRTF</div>
-                    <div className="text-[11px] text-outline truncate">Real-time gyro motion matrix</div>
-                  </div>
-                  <Toggle
-                    checked={settings.headTracking}
-                    onChange={(v) => setSetting("headTracking", v)}
-                    label="Head-tracking HRTF"
-                  />
-                </div>
+                <OutputCard />
               </>
             )}
 
@@ -143,9 +135,9 @@ export default function AudioEngineRail({ onPlay }: Props) {
                     Nothing queued. Play a track to build the flow.
                   </p>
                 ) : (
-                  upNext.map((t) => (
+                  upNext.map((t, i) => (
                     <button
-                      key={t.id}
+                      key={`${t.id}-${i}`}
                       type="button"
                       onClick={() => onPlay(t)}
                       className="w-full flex items-center justify-between p-2 rounded-lg bg-surface-container hover:bg-surface-high transition-colors group text-left"
@@ -173,27 +165,10 @@ export default function AudioEngineRail({ onPlay }: Props) {
                   <div className="flex items-center gap-1.5 mb-3">
                     <Sparkles className="w-4 h-4 text-primary" />
                     <span className="text-label-sm uppercase tracking-wider text-on-surface font-bold">
-                      Mood Vector
+                      Mood
                     </span>
                   </div>
-                  <div className="space-y-2.5">
-                    {MOOD_DIMENSIONS.map((dim, i) => (
-                      <div key={dim}>
-                        <div className="flex items-center justify-between text-[11px] mb-1">
-                          <span className="text-on-surface-variant">{dim}</span>
-                          <span className="text-outline font-mono">
-                            {(currentMood[i] ?? 0).toFixed(2)}
-                          </span>
-                        </div>
-                        <div className="h-1.5 rounded-full bg-surface-high overflow-hidden">
-                          <div
-                            className="h-full bg-primary-container transition-all duration-700 ease-out"
-                            style={{ width: `${Math.max(2, Math.min(100, (currentMood[i] ?? 0) * 100))}%` }}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                  <MoodMeter stacked />
                   {track?.mood_label && (
                     <div className="mt-3.5 pt-3 border-t border-white/8 text-[12px] text-on-surface-variant">
                       Reading this track as{" "}
@@ -202,20 +177,20 @@ export default function AudioEngineRail({ onPlay }: Props) {
                   )}
                 </div>
 
+                <FlowCard compact onPlayPick={dj.playPick} onReject={dj.reject} onRefresh={dj.refresh} onQueuePick={dj.queuePick} dense />
+
                 <div className="rounded-xl bg-surface-container p-4">
-                  <div className="section-eyebrow mb-3">AI DJ Confidence</div>
-                  {searchResults.length === 0 ? (
-                    <p className="text-[12px] text-outline">No candidates scored yet.</p>
+                  <div className="section-eyebrow mb-3">Also in the running</div>
+                  {djState.alternates.length === 0 ? (
+                    <p className="text-[12px] text-outline">The DJ has no runners-up yet.</p>
                   ) : (
                     <div className="space-y-2">
-                      {rankTracks(searchResults, aiRanking)
+                      {djState.alternates
                         .slice(0, 5)
                         .map((t) => {
-                          /* Undefined when the track carried no genre to read
-                             a mood from. The agent still ranked it, so it
-                             keeps its place in the list — there is just no
-                             affinity to draw. */
-                          const score = aiScores.get(t.id);
+                          /* Undefined when the track's mood is unread; the
+                             DJ still ranked it, so it keeps its place. */
+                          const score = typeof t.fit === "number" ? t.fit : undefined;
                           return (
                             <button
                               key={t.id}
@@ -229,7 +204,7 @@ export default function AudioEngineRail({ onPlay }: Props) {
                                 </span>
                                 <span
                                   className={`font-mono flex-shrink-0 ${score === undefined ? "text-outline" : "text-primary"}`}
-                                  title={score === undefined ? "No genre to read a mood from" : undefined}
+                                  title={score === undefined ? "Mood not read yet" : undefined}
                                 >
                                   {score === undefined ? "—" : `${Math.round(score * 100)}%`}
                                 </span>
@@ -257,6 +232,44 @@ export default function AudioEngineRail({ onPlay }: Props) {
   );
 
   /* ---------------- Sub-widgets ---------------- */
+
+  function OutputCard() {
+    const device = signature?.device;
+    const Icon = device?.kind === "headphones" ? Headphones : device?.kind === "speakers" ? Speaker : Usb;
+    const layers = [
+      device?.correction ? "device" : null,
+      eqOn ? "track" : null,
+      signature?.loudness ? "loudness" : null,
+    ].filter(Boolean);
+    return (
+      <button
+        type="button"
+        onClick={() => setActiveTab("settings")}
+        className="w-full rounded-xl bg-surface-container p-4 flex items-center gap-3 text-left hover:bg-surface-high transition-colors"
+      >
+        <Icon className={`w-5 h-5 flex-shrink-0 ${device?.correction ? "text-hi-res" : "text-primary"}`} />
+        <div className="min-w-0 flex-1">
+          <div className="text-label-md font-semibold text-on-surface truncate">
+            {device?.label || "System Output"}
+          </div>
+          <div className="text-[11px] text-outline truncate">
+            {!signature
+              ? "Sound Signature not reported"
+              : !signature.enabled
+                ? "Signature off · your EQ only"
+                : layers.length === 0
+                  ? "Signature on · nothing to add right now"
+                  : `Signature · ${layers.join(" + ")}`}
+          </div>
+        </div>
+        {device?.correction && (
+          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-hi-res/10 text-hi-res ring-1 ring-hi-res/40 flex-shrink-0">
+            Corrected
+          </span>
+        )}
+      </button>
+    );
+  }
 
   function HoloDisc() {
     return (

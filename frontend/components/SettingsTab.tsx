@@ -10,6 +10,8 @@ type AutoEqHeadphone = PlayerState["autoEq"]["headphones"][number];
 import { Toggle } from "./AudioEngineRail";
 import Rail from "./Rail";
 import Equalizer from "./Equalizer";
+import SoundSignature from "./SoundSignature";
+import FlowCard from "./FlowCard";
 
 interface Props {
   onVolume: (level: number) => void;
@@ -32,6 +34,26 @@ interface Props {
     getPresets: () => void;
     searchHeadphones: (query?: string) => void;
     applyAutoEq: (headphone: AutoEqHeadphone, target: string) => void;
+  };
+  /** Output devices and the Sound Signature layers. */
+  sound: {
+    getDevices: (requestLabels?: boolean) => void;
+    setDevice: (id: string) => void;
+    setSignature: (opts: {
+      enabled?: boolean;
+      loudness?: boolean;
+      autoDevice?: boolean;
+      deviceLabel?: string;
+      headphone?: AutoEqHeadphone;
+      target?: string;
+      clearDevice?: boolean;
+    }) => void;
+  };
+  /** The DJ's controls. */
+  dj: {
+    playPick: () => void;
+    reject: () => void;
+    refresh: () => void;
   };
 }
 
@@ -78,7 +100,7 @@ const SHORTCUTS: [string, string][] = [
   ["F11", "Fullscreen"],
 ];
 
-export default function SettingsTab({ onVolume, compact, eq, onPlaybackConfig, onInstances }: Props) {
+export default function SettingsTab({ onVolume, compact, eq, sound, dj, onPlaybackConfig, onInstances }: Props) {
   const settings = usePlayerStore((s) => s.settings);
   const setSetting = usePlayerStore((s) => s.setSetting);
   const volume = usePlayerStore((s) => s.volume);
@@ -132,8 +154,23 @@ export default function SettingsTab({ onVolume, compact, eq, onPlaybackConfig, o
         </p>
       </Card>
 
-      {/* ============ Spatial audio ============ */}
-      {/* The equaliser this screen is named for */}
+      {/* ============ Sound Signature ============ */}
+      <Card
+        icon={Headphones}
+        title="Sound Signature"
+        subtitle="One correction from the device, the record and the volume — stacked on your own EQ."
+      >
+        <SoundSignature
+          compact={compact}
+          onGetDevices={sound.getDevices}
+          onSetDevice={sound.setDevice}
+          onSetSignature={sound.setSignature}
+          onSearchHeadphones={eq.searchHeadphones}
+          onSetAdaptive={eq.setAdaptive}
+        />
+      </Card>
+
+      {/* ============ The equaliser ============ */}
       <Equalizer
         onGetState={eq.getState}
         onSetEnabled={eq.setEnabled}
@@ -141,8 +178,6 @@ export default function SettingsTab({ onVolume, compact, eq, onPlaybackConfig, o
         onSetPreamp={eq.setPreamp}
         onSetAdaptive={eq.setAdaptive}
         onGetPresets={eq.getPresets}
-        onSearchHeadphones={eq.searchHeadphones}
-        onApplyAutoEq={eq.applyAutoEq}
         compact={compact}
       />
 
@@ -196,11 +231,12 @@ export default function SettingsTab({ onVolume, compact, eq, onPlaybackConfig, o
       </Card>
 
       {/* ============ AI DJ ============ */}
-      <Card icon={Sparkles} title="AI DJ" subtitle="The reinforcement-learning agent that ranks what plays next.">
+      <Card icon={Sparkles} title="AI DJ" subtitle="Chooses what plays next from your library, along the arc you set.">
+        <FlowCard compact={compact} onPlayPick={dj.playPick} onReject={dj.reject} onRefresh={dj.refresh} />
         <Row
           icon={Sparkles}
           title="Adaptive Flow"
-          subtitle="Send play, skip and like signals back to the agent."
+          subtitle="Send play, skip, like and rejection signals back to the agent."
         >
           <Toggle
             checked={settings.adaptiveDj}
@@ -230,9 +266,11 @@ export default function SettingsTab({ onVolume, compact, eq, onPlaybackConfig, o
         <div className="flex items-start gap-2 mt-3 text-[11px] text-outline leading-relaxed">
           <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
           <span>
-            Exploration falls as the agent learns, so recommendations tighten the longer you listen.
-            Progress is checkpointed to disk, so it carries across restarts. Turning Adaptive Flow
-            off stops new feedback but keeps what it has already learnt.
+            The DJ blends the learned policy with how well each track fits the arc&apos;s target mood;
+            the policy&apos;s share grows as it trains. Every track&apos;s mood is measured from the audio
+            as it plays and kept in the library, so the reading gets better the more you listen.
+            Progress is checkpointed to disk. Turning Adaptive Flow off stops new feedback and stops
+            the DJ queuing picks, but keeps what it has learnt.
           </span>
         </div>
       </Card>

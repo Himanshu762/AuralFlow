@@ -299,3 +299,29 @@ null so the telemetry card shows dashes.
   init` / `tauri ios init` need Android Studio and Xcode respectively.
 - **Packaged installers.** `cargo check` passes; `npm run build` in `desktop/`
   has not been run, so the bundle step is unexercised.
+
+---
+
+## Pass 3: the DJ gets its eyes and hands
+
+The brain (network, rewards, training loop) matched the original idea; the
+eyes (real mood data) and hands (finding songs, queuing them) did not. This
+pass restored the loop with parts AuralFlow owns itself. Full description in
+`AURALFLOW.md`.
+
+| Was | Now |
+|---|---|
+| Mood from a genre lookup, blank without a genre; `compute_mood_vector` waiting for Spotify features nobody sends | The bridge measures the playing track from the live analyser — loudness, crest, dynamic range, centroid, flatness, flux, band ratios, peak-based chroma, onset-autocorrelation tempo, Krumhansl key/mode — and `feature_service` maps it to the 5-D vector with a confidence that grows with seconds heard. Artist priors cover unheard tracks by measured artists; genre is the last resort; "unknown" is reported as such. |
+| Candidates were whatever was typed into search | A `Song` library: every search result, play, import, album and artist lookup, with plays, skips, likes and rewards. `/library/pool` is what the DJ chooses from. |
+| `predict_next_mood` only overwrote a display value | Session arcs (`dj_service.arc_target`) turn the current mood into a target; the target is part of the agent's state (17 dims now; checkpoints carry the layout and mismatches start fresh). |
+| No auto-queue; every experience stored as terminal, so the Bellman bootstrap never ran | `/dj/next` picks from the pool (policy blended with target fit, novelty, recency, diversity; exploration labelled as discovery), the shell queues it as play-next, and feedback carries `next_state` and the next track's mood so the update is SARSA-style. Rejecting a pick is a −0.5 reward. |
+| Headphone correction and the stabiliser fought over the same filters | Sound Signature layers — manual base, device (AutoEQ, matched by output-device name, per-device profile), track (stabiliser), loudness (volume-dependent) — summed through `applyTransientGains`. Output devices enumerated, `devicechange` handled, `setSinkId` where allowed, manual naming where not. |
+| Engine handshake was a single `ready` at boot | The shell says `hello` until the engine answers, so a fast engine boot or a shell reload still connects. |
+| `end_session` raised `NameError` when the user was missing; alembic env carried a `/Users/anonymouse` path; `DATABASE_URL` was ignored; unused Postgres/Spotify deps | Fixed; `ensure_schema()` adds new columns to an existing SQLite file so upgrades need no migration step. |
+
+Verification: 50 backend specs, ESLint and `tsc` clean, static export builds,
+`engine/test/selftest.mjs` passes (tempo 120 ± 6, key C, major, layer sums),
+and a Playwright run against the built UI with a stub engine speaking the
+`af:` protocol and the live backend: search → library → play → measured
+features → pick queued next → rejection → feedback with the real next
+transition, with no console errors.

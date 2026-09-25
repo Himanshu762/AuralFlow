@@ -154,7 +154,9 @@ or add an instance URL there. Both take effect immediately — no rebuild.
 ## Tests
 
 ```bash
-cd backend && venv/bin/python -m pytest
+cd backend && venv/bin/python -m pytest        # agent, features, library, DJ, API
+cd frontend && npm run lint && npm run type-check
+node engine/test/selftest.mjs                  # bridge analysis and EQ layers, no engine needed
 ```
 
 ## Keyboard

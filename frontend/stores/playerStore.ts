@@ -1,4 +1,12 @@
 import { create } from "zustand";
+import {
+  postLibraryEvent,
+  type DjPick,
+  type FlowMode,
+  type LibraryStats,
+  type MeasuredSummary,
+  type MoodSource,
+} from "../lib/api";
 
 /* ------------------------------------------------------------------ */
 /* Types                                                              */
@@ -24,7 +32,76 @@ export interface Track {
   trackNumber?: number;
   mood_vector?: number[];
   mood_label?: string;
+  mood_source?: MoodSource;
+  mood_confidence?: number;
   confidence?: number;
+}
+
+/** Where the current mood reading came from, and how much audio it rests on. */
+export interface MoodReading {
+  trackId: string | null;
+  source: MoodSource;
+  confidence: number;
+  /** Seconds of audio the engine has analysed for this track so far. */
+  seconds: number;
+  measured: MeasuredSummary | null;
+  /** True while the engine is still measuring the playing track. */
+  live: boolean;
+}
+
+/** The DJ: the arc, and what it has chosen to play next. */
+export interface DjState {
+  pick: DjPick | null;
+  alternates: DjPick[];
+  reason: string;
+  target: number[] | null;
+  poolSize: number;
+  exploring: boolean;
+  policyWeight: number;
+  deciding: boolean;
+  /** Track id the current pick was queued behind, so it is never queued twice. */
+  queuedForTrack: string | null;
+  /** Position along a custom arc, in tracks. */
+  position: number;
+  library: LibraryStats | null;
+  rejected: string[];
+}
+
+export interface OutputDevice {
+  id: string;
+  label: string;
+  kind: "headphones" | "speakers" | "unknown";
+  current: boolean;
+}
+
+export interface DevicesState {
+  supported: boolean;
+  labelsAvailable: boolean;
+  current: string;
+  list: OutputDevice[];
+}
+
+/** The engine's Sound Signature: the layers that make up the running EQ. */
+export interface SignatureState {
+  enabled: boolean;
+  loudnessOn: boolean;
+  autoDevice: boolean;
+  device: {
+    id: string;
+    label: string;
+    kind: "headphones" | "speakers" | "unknown";
+    correction: number[] | null;
+    headphone: { name: string; type: string; path: string; fileName: string } | null;
+    target: string | null;
+    source: "none" | "auto" | "manual" | "profile";
+    message: string | null;
+  };
+  track: number[] | null;
+  loudness: number[] | null;
+  manual: number[];
+  composed: number[] | null;
+  frequencies: number[];
+  volume: number;
 }
 
 export type TabId = "home" | "search" | "library" | "queue" | "settings";
@@ -94,6 +171,14 @@ export interface AudioSettings {
   adaptiveDj: boolean;
   /** Render the WebGL shader backdrop. */
   shaderBackground: boolean;
+  /** The session arc the DJ steers by. */
+  flowMode: FlowMode;
+  /** Target for the custom arc. */
+  flowTarget: number[];
+  /** How many tracks a custom arc takes to arrive. */
+  flowHorizon: number;
+  /** Let the DJ queue its pick behind the playing track automatically. */
+  autoQueue: boolean;
 }
 
 export interface PlayerState {
@@ -188,6 +273,20 @@ export interface PlayerState {
   addRecentMood: (m: number[]) => void;
   aiStats: AiStats;
   setAiStats: (s: Partial<AiStats>) => void;
+  /** Provenance of the mood reading for the playing track. */
+  moodReading: MoodReading;
+  setMoodReading: (r: Partial<MoodReading>) => void;
+
+  /* The DJ */
+  dj: DjState;
+  setDj: (patch: Partial<DjState>) => void;
+  rejectPickLocally: (id: string) => void;
+
+  /* Output devices and the Sound Signature, both owned by the engine */
+  devices: DevicesState;
+  setDevices: (d: DevicesState) => void;
+  signature: SignatureState | null;
+  setSignature: (s: SignatureState | null) => void;
 
   /* Settings */
   settings: AudioSettings;
@@ -353,6 +452,34 @@ const DEFAULT_SETTINGS: AudioSettings = {
   headTracking: false,
   adaptiveDj: true,
   shaderBackground: true,
+  flowMode: "drift",
+  flowTarget: [0.5, 0.5, 0.5, 0.5, 0.5],
+  flowHorizon: 6,
+  autoQueue: true,
+};
+
+const EMPTY_DJ: DjState = {
+  pick: null,
+  alternates: [],
+  reason: "",
+  target: null,
+  poolSize: 0,
+  exploring: false,
+  policyWeight: 0,
+  deciding: false,
+  queuedForTrack: null,
+  position: 0,
+  library: null,
+  rejected: [],
+};
+
+const EMPTY_READING: MoodReading = {
+  trackId: null,
+  source: "unknown",
+  confidence: 0,
+  seconds: 0,
+  measured: null,
+  live: false,
 };
 
 function loadSettings(): AudioSettings {
@@ -512,9 +639,12 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   toggleLike: (id) =>
     set((s) => {
       const next = new Set(s.liked);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      const liked = !next.has(id);
+      if (liked) next.add(id);
+      else next.delete(id);
       persistLiked(next);
+      /* The library keeps likes too: they weight the DJ's ranking. */
+      postLibraryEvent(id, liked ? "like" : "unlike").catch(() => {});
       return { liked: next };
     }),
   isLiked: (id) => get().liked.has(id),
@@ -610,6 +740,18 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     online: false,
   },
   setAiStats: (s) => set((prev) => ({ aiStats: { ...prev.aiStats, ...s } })),
+  moodReading: EMPTY_READING,
+  setMoodReading: (r) => set((prev) => ({ moodReading: { ...prev.moodReading, ...r } })),
+
+  dj: EMPTY_DJ,
+  setDj: (patch) => set((prev) => ({ dj: { ...prev.dj, ...patch } })),
+  rejectPickLocally: (id) =>
+    set((prev) => ({ dj: { ...prev.dj, rejected: [...prev.dj.rejected, id].slice(-40) } })),
+
+  devices: { supported: false, labelsAvailable: false, current: "", list: [] },
+  setDevices: (devices) => set({ devices }),
+  signature: null,
+  setSignature: (signature) => set({ signature }),
 
   /* Settings */
   settings: DEFAULT_SETTINGS,

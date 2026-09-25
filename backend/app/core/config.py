@@ -1,6 +1,10 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import List
 import os
+from typing import List
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+_BACKEND_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 class Settings(BaseSettings):
@@ -12,12 +16,9 @@ class Settings(BaseSettings):
     API_V1_PREFIX: str = "/api/v1"
     SECRET_KEY: str = "dev-secret-key-change-in-production"
 
-    # Database — uses env DATABASE_URL if set, otherwise local SQLite
+    # Database. Empty means the local SQLite file beside the backend, which is
+    # what a self-hosted install wants. Set DATABASE_URL to use anything else.
     DATABASE_URL: str = ""
-
-    # Supabase (optional)
-    SUPABASE_URL: str = ""
-    SUPABASE_ANON_KEY: str = ""
 
     # Frontend
     FRONTEND_URL: str = "http://localhost:3000"
@@ -37,18 +38,13 @@ class Settings(BaseSettings):
         "https://tauri.localhost",
     ]
 
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        case_sensitive=True,
-        extra="allow"
-    )
+    model_config = SettingsConfigDict(env_file=".env", case_sensitive=True, extra="allow")
 
     @property
     def effective_database_url(self) -> str:
-        """Return the DB URL. Uses local SQLite for standalone mode."""
-        # Standalone lightweight app — always use local SQLite
-        db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "auralflow.db")
-        return f"sqlite:///{db_path}"
+        if self.DATABASE_URL.strip():
+            return self.DATABASE_URL.strip()
+        return f"sqlite:///{os.path.join(_BACKEND_ROOT, 'auralflow.db')}"
 
     @property
     def is_sqlite(self) -> bool:

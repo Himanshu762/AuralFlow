@@ -9,11 +9,11 @@ that want one. The desktop UI does not currently use them.
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
 
 from app.db.base import get_db
 from app.models.user import User
 from app.core.security import create_access_token
+from app.core.config import settings
 
 router = APIRouter()
 
@@ -41,7 +41,7 @@ async def local_login(db: Session = Depends(get_db)):
         access_token = create_access_token(data={"user_id": user.id})
 
         # Redirect to frontend
-        frontend_url = f"http://localhost:3000/auth/success?token={access_token}"
+        frontend_url = f"{settings.FRONTEND_URL.rstrip('/')}/auth/success?token={access_token}"
         return RedirectResponse(url=frontend_url)
 
     except Exception as e:

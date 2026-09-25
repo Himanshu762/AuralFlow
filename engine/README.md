@@ -9,9 +9,10 @@ Nothing of ours is kept there as its source of truth. This directory owns it:
 
 | | |
 |---|---|
-| `auralflow-bridge.js` | The whole integration. Translates between AuralFlow's `af:` postMessage protocol and Monochrome's player, and carries the adaptive EQ. |
+| `auralflow-bridge.js` | The whole integration. Translates between AuralFlow's `af:` postMessage protocol and Monochrome's player; measures the playing audio for the library (`af:features`); composes the Sound Signature layers onto the EQ filters; tracks output devices. |
 | `patches/` | Small additions to engine source, one file each. |
 | `apply.mjs` | Copies the bridge in and applies the patches. Idempotent. |
+| `test/selftest.mjs` | Drives the analyser with a synthetic 120 BPM C-major signal and checks tempo, key, mode and the layer arithmetic. Needs no vendored engine: `node engine/test/selftest.mjs`. |
 | `vendor.json` | Which upstream commit `monochrome_app/` came from. |
 
 `apply.mjs` runs automatically before every engine build, so a re-vendored tree

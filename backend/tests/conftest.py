@@ -1,11 +1,13 @@
 """Shared fixtures.
 
 The RL agent is a module-level singleton, so tests that touch training must
-isolate themselves from each other and from any checkpoint on disk.
+isolate themselves from each other and from any checkpoint on disk. The
+database is a throwaway SQLite file so tests never touch a real library.
 """
 
 import os
 import sys
+import tempfile
 
 import pytest
 
@@ -15,6 +17,11 @@ _ROOT = os.path.dirname(_BACKEND)
 for path in (_BACKEND, _ROOT):
     if path not in sys.path:
         sys.path.insert(0, path)
+
+# Must be set before anything imports app.core.config / app.db.base.
+_TMP = tempfile.mkdtemp(prefix="auralflow-tests-")
+os.environ["DATABASE_URL"] = f"sqlite:///{os.path.join(_TMP, 'test.db')}"
+os.environ["AURALFLOW_MODEL_PATH"] = os.path.join(_TMP, "agent.pt")
 
 
 @pytest.fixture
@@ -40,7 +47,23 @@ def agent():
 
 
 @pytest.fixture
-def client():
+def db():
+    """A database session on a fresh schema. Tables are emptied afterwards."""
+    from app.db.base import SessionLocal, ensure_schema, engine, Base
+
+    ensure_schema()
+    session = SessionLocal()
+    try:
+        yield session
+    finally:
+        session.close()
+        with engine.begin() as conn:
+            for table in reversed(Base.metadata.sorted_tables):
+                conn.execute(table.delete())
+
+
+@pytest.fixture
+def client(db):
     """FastAPI test client."""
     from fastapi.testclient import TestClient
     from app.main import app

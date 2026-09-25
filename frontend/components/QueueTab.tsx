@@ -1,15 +1,16 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { motion } from "framer-motion";
 import { Play, Pause, AudioLines, ListMusic, GripVertical, Sparkles, X, Plus } from "lucide-react";
 import { usePlayerStore, type Track } from "../stores/playerStore";
-import { fmtTime, qualityBadge, rankTracks } from "../lib/format";
+import { fmtTime, qualityBadge } from "../lib/format";
+import FlowCard from "./FlowCard";
 
 interface Props {
   onPlay: (track: Track) => void;
   onToggle: () => void;
   compact: boolean;
+  dj: { playPick: () => void; reject: () => void; refresh: () => void; queuePick: () => void };
   /** Queue operations, which act on the engine's own queue. */
   queue: {
     get: () => void;
@@ -21,18 +22,16 @@ interface Props {
   };
 }
 
-export default function QueueTab({ onPlay, onToggle, compact, queue }: Props) {
+export default function QueueTab({ onPlay, onToggle, compact, queue, dj }: Props) {
   const track = usePlayerStore((s) => s.track);
   const playing = usePlayerStore((s) => s.playing);
-  const searchResults = usePlayerStore((s) => s.searchResults);
-  const aiScores = usePlayerStore((s) => s.aiScores);
   const currentTime = usePlayerStore((s) => s.currentTime);
   const duration = usePlayerStore((s) => s.duration);
 
   const items = usePlayerStore((s) => s.queue);
   const queueIndex = usePlayerStore((s) => s.queueIndex);
   const monoReady = usePlayerStore((s) => s.monoReady);
-  const aiRanking = usePlayerStore((s) => s.aiRanking);
+  const djState = usePlayerStore((s) => s.dj);
 
   /* Ask the engine for its queue once it is up. After that the engine pushes
      an update whenever the queue or the position in it changes. */
@@ -47,10 +46,7 @@ export default function QueueTab({ onPlay, onToggle, compact, queue }: Props) {
     .filter(({ index }) => index > queueIndex);
 
   const queued = new Set(items.map((t) => t.id));
-  const aiSuggestions = rankTracks(
-    searchResults.filter((t) => t.id !== track?.id && !queued.has(t.id)),
-    aiRanking
-  ).slice(0, 6);
+  const aiSuggestions = djState.alternates.filter((t) => t.id !== track?.id && !queued.has(t.id)).slice(0, 6);
 
   /* Drag-to-reorder. The index being dragged lives here; the drop target is
      whichever row the pointer is over. */
@@ -69,7 +65,7 @@ export default function QueueTab({ onPlay, onToggle, compact, queue }: Props) {
   const badge = track ? qualityBadge(track) : null;
   const remaining = upNext.reduce((sum, { track: t }) => sum + (t.duration ?? 0), 0);
 
-  if (!track && upNext.length === 0) {
+  if (!track && upNext.length === 0 && !djState.pick) {
     return (
       <div className="flex flex-col items-center justify-center py-28 text-center">
         <ListMusic className="w-12 h-12 text-outline mb-4" />
@@ -224,20 +220,23 @@ export default function QueueTab({ onPlay, onToggle, compact, queue }: Props) {
         )}
       </div>
 
-      {/* ============ AI suggestions column ============ */}
-      {aiSuggestions.length > 0 && (
-        <section className="min-w-0">
-          <div className="flex items-center gap-1.5 mb-3">
+      {/* ============ The DJ column ============ */}
+      <section className="min-w-0 flex flex-col gap-3">
+        <FlowCard compact onPlayPick={dj.playPick} onReject={dj.reject} onRefresh={dj.refresh} onQueuePick={dj.queuePick} dense />
+
+        {aiSuggestions.length > 0 && (
+          <>
+          <div className="flex items-center gap-1.5">
             <Sparkles className="w-3.5 h-3.5 text-primary" />
-            <p className="section-eyebrow !text-primary">AI Suggests</p>
+            <p className="section-eyebrow !text-primary">Also in the running</p>
           </div>
 
           <div className="rounded-xl bg-surface-container/60 p-3 flex flex-col gap-1.5">
             <p className="text-[12px] text-outline leading-relaxed mb-1.5">
-              Ranked against your current mood vector by the reinforcement-learning agent.
+              The DJ&apos;s runners-up from your library for this arc. Add one, or play it now.
             </p>
             {aiSuggestions.map((t) => {
-              const score = aiScores.get(t.id);
+              const score = typeof t.fit === "number" ? t.fit : undefined;
               return (
                 <button
                   key={t.id}
@@ -245,11 +244,15 @@ export default function QueueTab({ onPlay, onToggle, compact, queue }: Props) {
                   onClick={() => onPlay(t)}
                   className="flex items-center gap-2.5 p-2 rounded-lg hover:bg-surface-high transition-colors text-left"
                 >
-                  <img
-                    src={t.cover}
-                    alt=""
-                    className="w-9 h-9 rounded object-cover flex-shrink-0 ring-1 ring-primary-container/20"
-                  />
+                  {t.cover ? (
+                    <img
+                      src={t.cover}
+                      alt=""
+                      className="w-9 h-9 rounded object-cover flex-shrink-0 ring-1 ring-primary-container/20"
+                    />
+                  ) : (
+                    <span className="w-9 h-9 rounded bg-surface-high flex-shrink-0" />
+                  )}
                   <div className="flex-1 min-w-0">
                     <p className="text-[12px] text-on-surface truncate font-medium">{t.title}</p>
                     <p className="text-[11px] text-outline truncate">{t.artist}</p>
@@ -282,17 +285,20 @@ export default function QueueTab({ onPlay, onToggle, compact, queue }: Props) {
             })}
           </div>
 
-          {!compact && (
-            <div className="mt-3 rounded-xl bg-surface-container/60 p-3.5 flex items-start gap-2.5">
-              <AudioLines className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
-              <p className="text-[11px] text-outline leading-relaxed">
-                Skips, replays and likes all feed back into the agent. The more you listen, the
-                tighter these suggestions track your flow.
-              </p>
-            </div>
-          )}
-        </section>
-      )}
+          </>
+        )}
+
+        {!compact && (
+          <div className="rounded-xl bg-surface-container/60 p-3.5 flex items-start gap-2.5">
+            <AudioLines className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
+            <p className="text-[11px] text-outline leading-relaxed">
+              Skips, likes and &quot;not this&quot; all feed back into the agent, and every track&apos;s
+              mood is measured from the audio as it plays. The more you listen, the tighter the
+              picks track your flow.
+            </p>
+          </div>
+        )}
+      </section>
     </div>
   );
 }
