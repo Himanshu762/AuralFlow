@@ -260,7 +260,23 @@ export default function Home() {
     else mono.getArtist(detail.id);
   }, [monoReady, detail, mono]);
 
-  /* Escape pops a pushed detail screen (Now Playing is handled in the hook). */
+  /* The sleep timer stops the music when it runs out. Checked on a short
+     interval rather than a single long timeout, so it survives the tab being
+     throttled in the background and cannot overshoot by minutes. */
+  const sleepTimer = usePlayerStore((s) => s.sleepTimer);
+  useEffect(() => {
+    if (!sleepTimer) return;
+    const id = setInterval(() => {
+      if (Date.now() < sleepTimer.endsAt) return;
+      const s = usePlayerStore.getState();
+      if (s.playing) mono.toggle();
+      s.setSleepTimer(null);
+    }, 5000);
+    return () => clearInterval(id);
+  }, [sleepTimer, mono]);
+
+  /* Escape pops a pushed detail screen; the rest of the keyboard lives in
+     useKeyboardShortcuts, which owns the window listener. */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const s = usePlayerStore.getState();
@@ -343,6 +359,7 @@ export default function Home() {
             compact={compact}
             onPlaybackConfig={mono.setPlaybackConfig}
             onInstances={mono.instances}
+            onPlaybackOpts={mono.setPlaybackOpts}
             dj={djControls}
             sound={{
               getDevices: mono.getDevices,

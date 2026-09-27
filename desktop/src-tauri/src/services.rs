@@ -354,7 +354,7 @@ pub fn spawn_all<R: Runtime>(app: &AppHandle<R>) {
                     "uvicorn",
                     "app.main:app",
                     "--host",
-                    "127.0.0.1",
+                    crate::engine_server::bind_host(),
                     "--port",
                     &BACKEND_PORT.to_string(),
                 ])

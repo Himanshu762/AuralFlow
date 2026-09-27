@@ -26,6 +26,8 @@ import {
     preferDolbyAtmosSettings,
     downloadQualitySettings,
     apiSettings,
+    gaplessPlaybackSettings,
+    crossfadeSettings,
 } from './storage.js';
 import { parseDynamicCSV, parseJSPF, parseXSPF, parseXML, parseM3U } from './playlist-importer.js';
 
@@ -471,9 +473,19 @@ function currentElement() {
     return player?.activeElement ?? null;
 }
 
+let lastPositionPublish = 0;
+
 function emitTimeUpdate() {
     const el = currentElement();
     if (!el) return;
+    /* The desktop scrubber only needs a coarse fix; a media element fires
+       timeupdate several times a second and setPositionState is not free. */
+    const now = Date.now();
+    if (now - lastPositionPublish > 1000) {
+        lastPositionPublish = now;
+        publishPlaybackState(!el.paused);
+        publishPosition();
+    }
     send('timeupdate', {
         currentTime: Number(el.currentTime) || 0,
         duration: Number(el.duration) || Number(player?.currentTrack?.duration) || 0,
@@ -484,7 +496,108 @@ function emitTimeUpdate() {
 function emitState(state) {
     if (state === lastState) return;
     lastState = state;
+    if (state === 'playing' || state === 'paused') publishPlaybackState(state === 'playing');
     send('statechange', { state });
+}
+
+/* ------------------------------------------------------------------ */
+/* The operating system's media controls                               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Publish what is playing to the desktop, and accept its controls.
+ *
+ * A music player that does not answer the media keys, and does not appear in
+ * the system's own now-playing panel, is not really a music player on a
+ * desktop - it is a web page that happens to make noise. The Media Session API
+ * is how a page gets both, and it belongs here rather than in the shell
+ * because the session follows the document that owns the playing audio
+ * element, which is this one.
+ */
+function publishMediaSession(track) {
+    const session = navigator.mediaSession;
+    if (!session) return;
+
+    try {
+        if (typeof MediaMetadata === 'function') {
+            const art = [96, 256, 512]
+                .map((size) => ({ src: coverUrl(player?.currentTrack, size), sizes: `${size}x${size}`, type: 'image/jpeg' }))
+                .filter((a) => a.src);
+            session.metadata = new MediaMetadata({
+                title: track.title || 'Unknown Title',
+                artist: track.artist || 'Unknown Artist',
+                album: track.album || '',
+                artwork: art,
+            });
+        }
+    } catch {
+        /* Metadata is a courtesy; the controls below matter more. */
+    }
+
+    /* Registering a handler is what tells the desktop the control exists, so
+       an unsupported action is skipped rather than shown and dead. */
+    /* The engine has one toggle rather than separate play and pause, so both
+       actions go through it and the element's own state decides. */
+    const setPlaying = (wanted) => {
+        const el = currentElement();
+        if (!el || el.paused !== wanted) return;
+        void player?.handlePlayPause?.();
+    };
+
+    const actions = {
+        play: () => setPlaying(true),
+        pause: () => setPlaying(false),
+        previoustrack: () => void player?.playPrev?.(),
+        nexttrack: () => void player?.playNext?.(),
+        seekbackward: (d) => seekBy(-(d?.seekOffset || 10)),
+        seekforward: (d) => seekBy(d?.seekOffset || 10),
+        seekto: (d) => {
+            if (Number.isFinite(d?.seekTime)) void player?.seekTo?.(d.seekTime, { resume: true });
+        },
+        stop: () => setPlaying(false),
+    };
+    for (const [action, handler] of Object.entries(actions)) {
+        try {
+            session.setActionHandler(action, handler);
+        } catch {
+            /* This desktop does not offer that one. */
+        }
+    }
+}
+
+function seekBy(delta) {
+    const el = currentElement();
+    if (!el || !Number.isFinite(el.currentTime)) return;
+    const to = Math.max(0, Math.min(Number(el.duration) || Infinity, el.currentTime + delta));
+    void player?.seekTo?.(to, { resume: !el.paused });
+}
+
+/** Keep the desktop's transport in step with ours. */
+function publishPlaybackState(playing) {
+    try {
+        if (navigator.mediaSession) navigator.mediaSession.playbackState = playing ? 'playing' : 'paused';
+    } catch {
+        /* not supported here */
+    }
+}
+
+/** Let the desktop draw an accurate scrubber. */
+function publishPosition() {
+    const el = currentElement();
+    const session = navigator.mediaSession;
+    if (!el || !session?.setPositionState) return;
+    const duration = Number(el.duration);
+    const position = Number(el.currentTime);
+    if (!Number.isFinite(duration) || duration <= 0 || !Number.isFinite(position)) return;
+    try {
+        session.setPositionState({
+            duration,
+            position: Math.min(position, duration),
+            playbackRate: Number(el.playbackRate) || 1,
+        });
+    } catch {
+        /* a rate or position it will not accept; not worth failing over */
+    }
 }
 
 function emitTrackLoaded() {
@@ -502,6 +615,8 @@ function emitTrackLoaded() {
     } catch {
         /* the queue is not readable yet; the shell will ask for it */
     }
+    publishMediaSession(track);
+    publishPosition();
     send('trackloaded', {
         track,
         duration: Number(currentElement()?.duration) || track.duration,
@@ -1779,6 +1894,15 @@ function readSignature() {
     };
 }
 
+/** Gapless and crossfade, as the engine currently has them. */
+function emitPlaybackOpts() {
+    send('playbackopts', {
+        gapless: Boolean(gaplessPlaybackSettings.isEnabled()),
+        crossfade: Boolean(crossfadeSettings.isEnabled()),
+        crossfadeSeconds: Number(crossfadeSettings.getDuration()) || 5,
+    });
+}
+
 function emitSignature() {
     send('signature', readSignature());
 }
@@ -1886,6 +2010,22 @@ async function handleCommand(type, data) {
                 signature.lastVolume = currentVolume();
                 composeSignature(0.2);
                 emitSignature();
+            }
+            break;
+        }
+
+        /* Gapless and crossfade: the engine has had both all along, with
+           nothing in the interface able to reach them. */
+        case 'playbackopts': {
+            try {
+                if (typeof data.gapless === 'boolean') gaplessPlaybackSettings.setEnabled(data.gapless);
+                if (typeof data.crossfade === 'boolean') crossfadeSettings.setEnabled(data.crossfade);
+                if (Number.isFinite(data.crossfadeSeconds)) {
+                    crossfadeSettings.setDuration(Math.max(1, Math.min(12, Number(data.crossfadeSeconds))));
+                }
+                emitPlaybackOpts();
+            } catch (e) {
+                send('error', { scope: 'playbackopts', message: String(e?.message ?? e) });
             }
             break;
         }
@@ -2816,6 +2956,7 @@ async function boot() {
            its own defaults back over the restored ones. Hand them over now,
            before anything is mirrored the other way. */
         send('queue', readQueue());
+        emitPlaybackOpts();
         send('shuffle', { enabled: Boolean(player.shuffleActive) });
         send('repeat', {
             mode:

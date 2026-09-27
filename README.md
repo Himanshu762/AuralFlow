@@ -156,7 +156,10 @@ npm run ios:init && npm run ios:dev          # macOS + Xcode
 
 A phone cannot host the Node and Python services, so point it at a machine that
 can via `NEXT_PUBLIC_MONOCHROME_URL` and `NEXT_PUBLIC_API_BASE`
-(see `frontend/.env.example`).
+(see `frontend/.env.example`), and start that machine's app with
+`AURALFLOW_LAN=1` so the ports are reachable from the network at all. They
+listen on loopback otherwise, which is the right default for a library and an
+engine carrying your account.
 
 ---
 

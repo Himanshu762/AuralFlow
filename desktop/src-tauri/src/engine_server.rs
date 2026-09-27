@@ -217,6 +217,20 @@ fn percent_decode(input: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
+/// Which interface the local servers listen on.
+///
+/// Loopback by default: this serves the listener's own library and an engine
+/// with their account in it, and nothing on the network has any business
+/// reaching that. Setting `AURALFLOW_LAN=1` opens it to the local network,
+/// which is what the documented phone setup needs - a phone cannot run the
+/// engine itself and has to reach the machine that does.
+pub fn bind_host() -> &'static str {
+    match std::env::var("AURALFLOW_LAN").ok().as_deref() {
+        Some("1") | Some("true") | Some("yes") => "0.0.0.0",
+        _ => "127.0.0.1",
+    }
+}
+
 /// Start serving `root` on `port` in a background thread.
 ///
 /// Returns false when the directory is missing, so the caller can report that
@@ -230,7 +244,7 @@ pub fn serve(root: PathBuf, library: Option<PathBuf>, port: u16) -> bool {
         return false;
     }
 
-    let server = match Server::http(("127.0.0.1", port)) {
+    let server = match Server::http((bind_host(), port)) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("[auralflow] could not bind audio engine port {port}: {e}");
@@ -239,6 +253,9 @@ pub fn serve(root: PathBuf, library: Option<PathBuf>, port: u16) -> bool {
     };
 
     eprintln!("[auralflow] serving audio engine from {}", root.display());
+    if bind_host() != "127.0.0.1" {
+        eprintln!("[auralflow] AURALFLOW_LAN is set — the engine is reachable from the local network on port {port}");
+    }
 
     if let Some(dir) = library.as_ref() {
         eprintln!("[auralflow] offline library at {}", dir.display());

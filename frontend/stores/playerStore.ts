@@ -312,6 +312,12 @@ export interface PlayerState {
   settings: AudioSettings;
   /** The values the engine has confirmed; null until it has answered. */
   engineConfirmed: EngineConfirmed;
+  /** How one track gives way to the next, as the engine has it. */
+  playbackOpts: { gapless: boolean; crossfade: boolean; crossfadeSeconds: number };
+  setPlaybackOpts: (o: Partial<PlayerState["playbackOpts"]>) => void;
+  /** Minutes until playback stops, or null when no timer is running. */
+  sleepTimer: { endsAt: number; minutes: number } | null;
+  setSleepTimer: (minutes: number | null) => void;
   /** Record an engine confirmation and show it. */
   confirmFromEngine: (patch: Partial<EngineConfirmed>) => void;
   setSetting: <K extends keyof AudioSettings>(key: K, value: AudioSettings[K]) => void;
@@ -782,6 +788,14 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   /* Settings */
   settings: DEFAULT_SETTINGS,
+  playbackOpts: { gapless: true, crossfade: false, crossfadeSeconds: 5 },
+  setPlaybackOpts: (o) => set((st) => ({ playbackOpts: { ...st.playbackOpts, ...o } })),
+  sleepTimer: null,
+  setSleepTimer: (minutes) =>
+    set({
+      sleepTimer:
+        minutes && minutes > 0 ? { endsAt: Date.now() + minutes * 60_000, minutes } : null,
+    }),
   engineConfirmed: {
     shuffle: null,
     repeat: null,

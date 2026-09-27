@@ -3,6 +3,7 @@
 import React from "react";
 import {
   Wifi, Radio, Headphones, Download, Sparkles, Waves, Keyboard, Info, Clock, Heart,
+  Shuffle, Link2, Moon,
 } from "lucide-react";
 import { usePlayerStore, type AudioSettings, type PlayerState } from "../stores/playerStore";
 
@@ -18,6 +19,8 @@ interface Props {
   compact: boolean;
   /** Points the engine at a streaming endpoint at runtime. */
   onPlaybackConfig: (baseUrl: string, token: string) => void;
+  /** Gapless, crossfade and crossfade length — all held by the engine. */
+  onPlaybackOpts: (o: { gapless?: boolean; crossfade?: boolean; crossfadeSeconds?: number }) => void;
   /** Reads or changes the catalogue/streaming backends the engine uses. */
   onInstances: (opts: {
     add?: { url: string; type: "api" | "streaming" }[];
@@ -100,9 +103,24 @@ const SHORTCUTS: [string, string][] = [
   ["F11", "Fullscreen"],
 ];
 
-export default function SettingsTab({ onVolume, compact, eq, sound, dj, onPlaybackConfig, onInstances }: Props) {
+export default function SettingsTab({ onVolume, compact, eq, sound, dj, onPlaybackConfig, onInstances, onPlaybackOpts }: Props) {
   const settings = usePlayerStore((s) => s.settings);
   const setSetting = usePlayerStore((s) => s.setSetting);
+  const playbackOpts = usePlayerStore((s) => s.playbackOpts);
+  const sleepTimer = usePlayerStore((s) => s.sleepTimer);
+  const setSleepTimer = usePlayerStore((s) => s.setSleepTimer);
+
+  /* Re-render once a minute so the timer's remaining time stays honest. */
+  const [now, setNow] = React.useState(() => Date.now());
+  React.useEffect(() => {
+    if (!sleepTimer) return;
+    /* Take the time now as well as on the interval: without this the first
+       render after setting a timer counts down from whenever this screen was
+       opened, and a fresh 30-minute timer reads as 33. */
+    setNow(Date.now());
+    const id = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, [sleepTimer]);
   const volume = usePlayerStore((s) => s.volume);
   const aiStats = usePlayerStore((s) => s.aiStats);
   const monoReady = usePlayerStore((s) => s.monoReady);
@@ -180,6 +198,95 @@ export default function SettingsTab({ onVolume, compact, eq, sound, dj, onPlayba
         onGetPresets={eq.getPresets}
         compact={compact}
       />
+
+      {/* ============ Between tracks ============ */}
+      <Card
+        icon={Shuffle}
+        title="Between Tracks"
+        subtitle="How one record gives way to the next."
+      >
+        <Row
+          icon={Link2}
+          title="Gapless"
+          subtitle="No silence between tracks that were cut to run together."
+        >
+          <Toggle
+            checked={playbackOpts.gapless}
+            onChange={(v) => onPlaybackOpts({ gapless: v })}
+            label="Gapless playback"
+          />
+        </Row>
+        <Row
+          icon={Waves}
+          title="Crossfade"
+          subtitle={
+            playbackOpts.crossfade
+              ? `Tracks overlap for ${playbackOpts.crossfadeSeconds} seconds.`
+              : "Fade one track into the next."
+          }
+        >
+          <Toggle
+            checked={playbackOpts.crossfade}
+            onChange={(v) => onPlaybackOpts({ crossfade: v })}
+            label="Crossfade"
+          />
+        </Row>
+        {playbackOpts.crossfade && (
+          <div className="px-3.5 py-3 rounded-xl bg-surface-low">
+            <div className="flex items-center justify-between mb-2.5">
+              <span className="text-[14px] text-on-surface font-medium">Crossfade length</span>
+              <span className="text-[12px] text-outline font-mono tabular-nums">
+                {playbackOpts.crossfadeSeconds}s
+              </span>
+            </div>
+            <input
+              type="range"
+              min={1}
+              max={12}
+              step={1}
+              value={playbackOpts.crossfadeSeconds}
+              onChange={(e) => onPlaybackOpts({ crossfadeSeconds: Number(e.target.value) })}
+              aria-label="Crossfade length in seconds"
+              className="eq-slider-h"
+            />
+          </div>
+        )}
+        <Row
+          icon={Moon}
+          title="Sleep timer"
+          subtitle={
+            sleepTimer
+              ? `Stops in ${Math.max(0, Math.ceil((sleepTimer.endsAt - now) / 60000))} min.`
+              : "Stop playing after a while."
+          }
+        >
+          <div className="flex gap-1.5 flex-wrap justify-end">
+            {[15, 30, 60].map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setSleepTimer(sleepTimer?.minutes === m ? null : m)}
+                className={`px-2.5 py-1.5 rounded-full text-[11px] font-semibold transition-colors ${
+                  sleepTimer?.minutes === m
+                    ? "bg-primary text-on-primary"
+                    : "bg-surface-high text-on-surface-variant hover:text-on-surface"
+                }`}
+              >
+                {m}m
+              </button>
+            ))}
+            {sleepTimer && (
+              <button
+                type="button"
+                onClick={() => setSleepTimer(null)}
+                className="px-2.5 py-1.5 rounded-full text-[11px] font-semibold bg-surface-high text-outline hover:text-danger transition-colors"
+              >
+                Off
+              </button>
+            )}
+          </div>
+        </Row>
+      </Card>
 
       <Card icon={Radio} title="Spatial Audio" subtitle="Immersive rendering for Atmos and binaural masters.">
         <Row

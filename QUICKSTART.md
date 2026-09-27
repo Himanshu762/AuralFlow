@@ -130,6 +130,17 @@ NEXT_PUBLIC_MONOCHROME_URL=http://192.168.1.20:5173
 NEXT_PUBLIC_API_BASE=http://192.168.1.20:8000/api/v1
 ```
 
+Both servers listen on loopback only, so start the desktop app with
+`AURALFLOW_LAN=1` on the machine that hosts them — otherwise nothing on the
+network can reach either port:
+
+```bash
+AURALFLOW_LAN=1 auralflow
+```
+
+Only do that on a network you trust. It exposes your library and the engine,
+with your account in it, to everything on the same network.
+
 ---
 
 ## Playback

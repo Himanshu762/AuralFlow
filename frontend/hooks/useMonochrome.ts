@@ -313,6 +313,14 @@ export function useMonochrome() {
           s.confirmFromEngine({ downloadQuality: String(data.quality) });
           break;
 
+        case "playbackopts":
+          s.setPlaybackOpts({
+            gapless: Boolean(data.gapless),
+            crossfade: Boolean(data.crossfade),
+            crossfadeSeconds: Number(data.crossfadeSeconds) || 5,
+          });
+          break;
+
         case "playbackconfig":
           usePlayerStore.setState({ playbackConfigured: Boolean(data.configured) });
           break;
@@ -724,6 +732,9 @@ export function useMonochrome() {
       download: (opts: { trackId?: string; scope?: "track" | "queue"; quality?: string }) =>
         send("download", opts),
       setDownloadQuality: (quality: string) => send("downloadquality", { quality }),
+      /** Gapless, crossfade and its length — all owned by the engine. */
+      setPlaybackOpts: (o: { gapless?: boolean; crossfade?: boolean; crossfadeSeconds?: number }) =>
+        send("playbackopts", o),
       /** Point the engine at a streaming endpoint. Empty values clear it. */
       setPlaybackConfig: (baseUrl: string, token: string) =>
         send("playbackconfig", { baseUrl, token }),
