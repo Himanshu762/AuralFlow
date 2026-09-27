@@ -9,6 +9,7 @@ import {
   type EqState,
   type ArtistDetail,
   type PlayerState,
+  type RepeatMode,
 } from "../stores/playerStore";
 import {
   scoreTracksAI,
@@ -55,7 +56,8 @@ const PLAYBACK_API_TOKEN = process.env.NEXT_PUBLIC_PLAYBACK_API_TOKEN || "";
  * indistinguishable from the app hanging, so watch the clock and say what is
  * actually wrong.
  */
-const STALL_AFTER_MS = 6000;
+/* Long enough that a slow start is not mistaken for a dead decoder. */
+const STALL_AFTER_MS = 10000;
 
 let lastPosition = -1;
 let movedAt = 0;
@@ -70,6 +72,17 @@ function noteProgress(isPlaying: boolean, position: number) {
 
   if (!isPlaying) {
     lastPosition = -1;
+    if (store.stalled) store.setStalled(null);
+    return;
+  }
+
+  /* A track that is still resolving its stream reports itself as playing at
+     position zero, and can stay there for several seconds on a slow answer.
+     That is not a decoder that will never produce sound, and telling someone
+     to go and install GStreamer packages because a stream took a moment is
+     worse than saying nothing. Only start counting once it is loaded. */
+  if (store.loading) {
+    movedAt = 0;
     if (store.stalled) store.setStalled(null);
     return;
   }
@@ -253,9 +266,14 @@ export function useMonochrome() {
 
       switch (type) {
         case "ready":
+          /* null means the engine has not finished probing yet and will
+             follow with `playbackconfig`; treating that as false would flash
+             "playback not configured" on every launch. */
           usePlayerStore.setState({
             monoReady: true,
-            playbackConfigured: Boolean(data.playbackConfigured),
+            ...(data.playbackConfigured === null
+              ? {}
+              : { playbackConfigured: Boolean(data.playbackConfigured) }),
           });
           /* Hand the engine a playback endpoint if one is configured. */
           if (PLAYBACK_API_BASE && PLAYBACK_API_TOKEN) {
@@ -266,6 +284,33 @@ export function useMonochrome() {
              says what is playing the sound. */
           send("eqstate");
           send("devices", { requestLabels: false });
+          break;
+
+        /* The engine answers every transport and quality command with what it
+           actually applied. Believing the answer rather than the request is
+           what stops these controls drifting away from the sound. */
+        case "shuffle":
+          s.confirmFromEngine({ shuffle: Boolean(data.enabled) });
+          break;
+
+        case "repeat":
+          s.confirmFromEngine({ repeat: String(data.mode) as RepeatMode });
+          break;
+
+        case "quality":
+          s.confirmFromEngine({ streamQuality: String(data.tier) });
+          break;
+
+        case "spatial":
+          s.confirmFromEngine({ spatial: Boolean(data.enabled) });
+          break;
+
+        case "atmos":
+          s.confirmFromEngine({ atmos: Boolean(data.enabled) });
+          break;
+
+        case "downloadquality":
+          s.confirmFromEngine({ downloadQuality: String(data.quality) });
           break;
 
         case "playbackconfig":
@@ -558,14 +603,19 @@ export function useMonochrome() {
           break;
         }
 
-        case "importprogress":
+        case "importprogress": {
+          /* The batched CSV path knows how many have matched; the one-pass
+             parsers do not, and send null rather than a misleading zero. */
+          const soFar = data.matched;
           usePlayerStore.getState().setImportState({
             running: true,
             current: Number(data.current) || 0,
             total: Number(data.total) || 0,
             item: String(data.item ?? ""),
+            ...(typeof soFar === "number" ? { matchedCount: soFar } : {}),
           });
           break;
+        }
 
         case "importdone": {
           const store = usePlayerStore.getState();
@@ -581,6 +631,7 @@ export function useMonochrome() {
             done: true,
             error: null,
             matched,
+            matchedCount: matched.length,
             playlists,
             missing: (data.missing || []) as ImportState["missing"],
           });
@@ -602,6 +653,11 @@ export function useMonochrome() {
 
         case "error":
           console.warn(`[engine] ${data.scope}: ${data.message}`);
+          /* Binaural rendering is the one setting the engine can refuse
+             outright - not every platform has the DSP for it. Leaving the
+             switch on would tell the listener it is doing something it is
+             not, so put it back and say why. */
+          if (data.scope === "spatial") s.confirmFromEngine({ spatial: false });
           break;
       }
     };
@@ -693,7 +749,9 @@ export function useMonochrome() {
       getQueue: () => send("queue"),
       /** Append tracks, or drop them in right after the current one. */
       queueAdd: (tracks: Track[], next = false) => send("queueadd", { tracks, next }),
-      queueRemove: (index: number) => send("queueremove", { index }),
+      /* The id travels with the index so the engine can tell whether the
+         queue moved under us before the command landed. */
+      queueRemove: (index: number, id?: string) => send("queueremove", { index, id }),
       /** Reorder by dragging. */
       queueMove: (from: number, to: number) => send("queuemove", { from, to }),
       queueClear: () => send("queueclear"),
@@ -755,7 +813,7 @@ export function useMonochrome() {
         st.rejectPickLocally(pick.id);
         /* If it was already queued behind the current track, pull it. */
         const idx = st.queue.findIndex((t, i) => i > st.queueIndex && t.id === pick.id);
-        if (idx >= 0) send("queueremove", { index: idx });
+        if (idx >= 0) send("queueremove", { index: idx, id: pick.id });
         st.setDj({ pick: null, queuedForTrack: null, reason: "Choosing another…" });
         await djReject(pick.id, pick.mood_vector, {
           currentMood: st.currentMood,
@@ -798,6 +856,7 @@ export function useMonochrome() {
           total: 0,
           item: "",
           matched: [],
+          matchedCount: 0,
           missing: [],
           playlists: [],
           sourceName,

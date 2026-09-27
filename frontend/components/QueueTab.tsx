@@ -15,7 +15,7 @@ interface Props {
   queue: {
     get: () => void;
     add: (tracks: Track[], next?: boolean) => void;
-    remove: (index: number) => void;
+    remove: (index: number, id?: string) => void;
     move: (from: number, to: number) => void;
     clear: () => void;
     play: (index: number) => void;
@@ -205,7 +205,7 @@ export default function QueueTab({ onPlay, onToggle, compact, queue, dj }: Props
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        queue.remove(index);
+                        queue.remove(index, t.id);
                       }}
                       aria-label={`Remove ${t.title} from the queue`}
                       className="w-7 h-7 rounded-full flex items-center justify-center text-outline opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-danger hover:bg-surface-high transition-all flex-shrink-0"

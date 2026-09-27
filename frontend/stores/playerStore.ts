@@ -181,6 +181,26 @@ export interface AudioSettings {
   autoQueue: boolean;
 }
 
+/**
+ * What the engine has confirmed it actually applied.
+ *
+ * Transport modes, stream quality and spatial rendering live in the engine,
+ * not here. The shell asks for a value and the engine answers with the value
+ * it really set - which is not always the one asked for: an unknown quality
+ * tier falls back, and binaural rendering can refuse outright. Keeping the
+ * answer lets the controls show the truth instead of the request, and lets
+ * the mirroring effects tell "not asked yet" apart from "asked and answered",
+ * so they do not ask again in a loop.
+ */
+export interface EngineConfirmed {
+  shuffle: boolean | null;
+  repeat: RepeatMode | null;
+  streamQuality: string | null;
+  spatial: boolean | null;
+  atmos: boolean | null;
+  downloadQuality: string | null;
+}
+
 export interface PlayerState {
   /* Navigation */
   activeTab: TabId;
@@ -290,6 +310,10 @@ export interface PlayerState {
 
   /* Settings */
   settings: AudioSettings;
+  /** The values the engine has confirmed; null until it has answered. */
+  engineConfirmed: EngineConfirmed;
+  /** Record an engine confirmation and show it. */
+  confirmFromEngine: (patch: Partial<EngineConfirmed>) => void;
   setSetting: <K extends keyof AudioSettings>(key: K, value: AudioSettings[K]) => void;
 
   /* Storage hydration — see hydrate() */
@@ -406,8 +430,10 @@ export interface ImportState {
   total: number;
   /** The row being looked up right now. */
   item: string;
-  /** Tracks that were found in the catalogue. */
+  /** Tracks that were found in the catalogue. Filled in when the run ends. */
   matched: Track[];
+  /** How many have matched so far, which is knowable while the run is going. */
+  matchedCount: number;
   /** Rows that could not be matched, so the user knows what did not come across. */
   missing: { title: string; artist: string; type: string }[];
   /** Playlists the file described, once the run finishes. */
@@ -424,6 +450,7 @@ const EMPTY_IMPORT: ImportState = {
   total: 0,
   item: "",
   matched: [],
+  matchedCount: 0,
   missing: [],
   playlists: [],
   error: null,
@@ -755,6 +782,32 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   /* Settings */
   settings: DEFAULT_SETTINGS,
+  engineConfirmed: {
+    shuffle: null,
+    repeat: null,
+    streamQuality: null,
+    spatial: null,
+    atmos: null,
+    downloadQuality: null,
+  },
+  confirmFromEngine: (patch) =>
+    set((state) => {
+      const settings = { ...state.settings };
+      if (patch.streamQuality === "hi-res" || patch.streamQuality === "lossless" || patch.streamQuality === "high") {
+        settings.streamQuality = patch.streamQuality;
+      }
+      if (typeof patch.spatial === "boolean") settings.headTracking = patch.spatial;
+      if (typeof patch.atmos === "boolean") settings.dolbyAtmos = patch.atmos;
+      /* Keep what the engine settled on, so the next launch asks for the
+         value that actually worked rather than the one that was refused. */
+      if (settings !== state.settings) persistSettings(settings);
+      return {
+        engineConfirmed: { ...state.engineConfirmed, ...patch },
+        settings,
+        ...(typeof patch.shuffle === "boolean" ? { shuffle: patch.shuffle } : {}),
+        ...(patch.repeat ? { repeat: patch.repeat } : {}),
+      };
+    }),
   setSetting: (key, value) =>
     set((s) => {
       const next = { ...s.settings, [key]: value };

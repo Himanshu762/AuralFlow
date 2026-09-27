@@ -38,6 +38,11 @@ export default function LibraryTab({ onPlay, compact, onImport, onGetOffline, on
   const playlists = usePlayerStore((s) => s.playlists);
   const offline = usePlayerStore((s) => s.offline);
   const deletePlaylist = usePlayerStore((s) => s.deletePlaylist);
+  const renamePlaylist = usePlayerStore((s) => s.renamePlaylist);
+  const removeFromPlaylist = usePlayerStore((s) => s.removeFromPlaylist);
+
+  /* Which playlist's name is being edited, and the text so far. */
+  const [editing, setEditing] = useState<{ id: string; name: string } | null>(null);
 
   const [collection, setCollection] = useState<Collection>("overview");
 
@@ -257,7 +262,33 @@ export default function LibraryTab({ onPlay, compact, onImport, onGetOffline, on
                     <section key={pl.id} className="rounded-2xl bg-surface-container/70 overflow-hidden">
                       <div className="flex items-center gap-3 px-4 py-3.5 border-b border-white/6">
                         <div className="min-w-0 flex-1">
-                          <p className="text-[15px] font-semibold text-on-surface truncate">{pl.name}</p>
+                          {editing?.id === pl.id ? (
+                            <input
+                              autoFocus
+                              value={editing.name}
+                              onChange={(e) => setEditing({ id: pl.id, name: e.target.value })}
+                              onBlur={() => {
+                                const name = editing.name.trim();
+                                if (name) renamePlaylist(pl.id, name);
+                                setEditing(null);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") e.currentTarget.blur();
+                                if (e.key === "Escape") setEditing(null);
+                              }}
+                              aria-label={`Rename ${pl.name}`}
+                              className="w-full bg-surface-high rounded-lg px-2 py-1 text-[15px] font-semibold text-on-surface outline-none ring-1 ring-primary/40"
+                            />
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setEditing({ id: pl.id, name: pl.name })}
+                              title="Rename"
+                              className="block w-full text-left text-[15px] font-semibold text-on-surface truncate hover:text-primary transition-colors"
+                            >
+                              {pl.name}
+                            </button>
+                          )}
                           <p className="text-[11px] text-outline truncate">
                             {pl.tracks.length} track{pl.tracks.length === 1 ? "" : "s"}
                             {pl.source !== "auralflow" && ` · from ${pl.source}`}
@@ -283,7 +314,13 @@ export default function LibraryTab({ onPlay, compact, onImport, onGetOffline, on
                       </div>
                       <div className="divide-y divide-white/5">
                         {pl.tracks.filter(matches).slice(0, 50).map((t, i) => (
-                          <TrackRow key={t.id} track={t} index={i} onPlay={onPlay} />
+                          <TrackRow
+                            key={t.id}
+                            track={t}
+                            index={i}
+                            onPlay={onPlay}
+                            onRemove={(track) => removeFromPlaylist(pl.id, track.id)}
+                          />
                         ))}
                       </div>
                       {pl.tracks.length > 50 && (

@@ -133,15 +133,20 @@ export default function Home() {
   const streamQuality = usePlayerStore((s) => s.settings.streamQuality);
   const headTracking = usePlayerStore((s) => s.settings.headTracking);
 
-  useEffect(() => {
-    if (!monoReady) return;
-    mono.setQuality(streamQuality);
-  }, [monoReady, streamQuality, mono]);
+  /* Ask only for what the engine has not already confirmed. The engine echoes
+     back what it applied and the store adopts that answer, so without this
+     check a value the engine corrected would be pushed straight back at it. */
+  const confirmed = usePlayerStore((s) => s.engineConfirmed);
 
   useEffect(() => {
-    if (!monoReady) return;
+    if (!monoReady || confirmed.streamQuality === streamQuality) return;
+    mono.setQuality(streamQuality);
+  }, [monoReady, streamQuality, confirmed.streamQuality, mono]);
+
+  useEffect(() => {
+    if (!monoReady || confirmed.spatial === headTracking) return;
     mono.setSpatial(headTracking);
-  }, [monoReady, headTracking, mono]);
+  }, [monoReady, headTracking, confirmed.spatial, mono]);
 
   const dolbyAtmos = usePlayerStore((s) => s.settings.dolbyAtmos);
 
@@ -177,21 +182,23 @@ export default function Home() {
   );
 
   useEffect(() => {
-    if (!monoReady) return;
+    if (!monoReady || confirmed.atmos === dolbyAtmos) return;
     mono.setPreferAtmos(dolbyAtmos);
-  }, [monoReady, dolbyAtmos, mono]);
+  }, [monoReady, dolbyAtmos, confirmed.atmos, mono]);
 
   /* Transport modes live in the engine; mirror the shell's state onto it. */
   const repeat = usePlayerStore((s) => s.repeat);
   const shuffle = usePlayerStore((s) => s.shuffle);
 
   useEffect(() => {
-    if (monoReady) mono.setRepeat(repeat);
-  }, [monoReady, repeat, mono]);
+    if (!monoReady || confirmed.repeat === repeat) return;
+    mono.setRepeat(repeat);
+  }, [monoReady, repeat, confirmed.repeat, mono]);
 
   useEffect(() => {
-    if (monoReady) mono.setShuffle(shuffle);
-  }, [monoReady, shuffle, mono]);
+    if (!monoReady || confirmed.shuffle === shuffle) return;
+    mono.setShuffle(shuffle);
+  }, [monoReady, shuffle, confirmed.shuffle, mono]);
 
   /* The inspector needs real estate; never show it in the compact layout. */
   useEffect(() => {

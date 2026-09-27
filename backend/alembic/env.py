@@ -31,7 +31,7 @@ for _p in (_backend, os.path.dirname(_backend)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 from app.db.base import Base
-from app.models import User, Song, Session, Transition
+from app.models import User, Song
 target_metadata = Base.metadata
 
 # other values from the config, defined by the needs of env.py,

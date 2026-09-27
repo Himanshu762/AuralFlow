@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { Play, Heart, ListPlus, Check } from "lucide-react";
+import { Play, Heart, ListPlus, Check, X } from "lucide-react";
 import { usePlayerStore, type Track } from "../stores/playerStore";
 import { fmtTime, qualityBadge } from "../lib/format";
 
@@ -13,6 +13,9 @@ interface Props {
   score?: number;
   /** Touch layouts keep the like button visible; pointer layouts reveal on hover. */
   touch?: boolean;
+  /** Given when the row sits in a list it can be taken out of, such as a
+      playlist. Without it the row shows no remove control at all. */
+  onRemove?: (t: Track) => void;
 }
 
 /**
@@ -21,7 +24,7 @@ interface Props {
  * Columns collapse on the *container's* width, not the viewport's: these lists
  * sit beside the inspector rail, so a wide window does not mean a wide list.
  */
-export default function TrackRow({ track, index, onPlay, score, touch = false }: Props) {
+export default function TrackRow({ track, index, onPlay, score, touch = false, onRemove }: Props) {
   const current = usePlayerStore((s) => s.track);
   const liked = usePlayerStore((s) => s.liked);
   const toggleLike = usePlayerStore((s) => s.toggleLike);
@@ -153,6 +156,24 @@ export default function TrackRow({ track, index, onPlay, score, touch = false }:
         >
           <ListPlus className="w-4 h-4" />
         </button>
+
+        {onRemove && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemove(track);
+            }}
+            aria-label={`Remove ${track.title} from this playlist`}
+            className={`w-8 h-8 rounded-full flex items-center justify-center transition-all flex-shrink-0 ${
+              touch
+                ? "text-outline"
+                : "text-outline opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-danger hover:bg-surface-high"
+            }`}
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
 
         {menuOpen && (
           <div

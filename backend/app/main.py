@@ -7,7 +7,7 @@ from app.core.config import settings
 from app.db.base import ensure_schema
 
 # Import all models so SQLAlchemy knows about them
-from app.models import User, Song, Session, Transition  # noqa: F401
+from app.models import User, Song  # noqa: F401
 
 
 @asynccontextmanager
@@ -63,10 +63,8 @@ async def health_check():
     return {"status": "healthy"}
 
 
-from app.api.endpoints import auth, dj, library, recommendations, sessions  # noqa: E402
+from app.api.endpoints import dj, library, recommendations  # noqa: E402
 
-app.include_router(auth.router, prefix=f"{settings.API_V1_PREFIX}/auth", tags=["auth"])
-app.include_router(sessions.router, prefix=f"{settings.API_V1_PREFIX}/sessions", tags=["sessions"])
 app.include_router(
     recommendations.router, prefix=f"{settings.API_V1_PREFIX}/recommendations", tags=["recommendations"]
 )

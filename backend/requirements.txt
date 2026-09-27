@@ -21,8 +21,6 @@ torch==2.9.0
 numpy==2.2.0
 
 # Authentication (local single-user token)
-python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
 
 # Utilities
 pydantic==2.10.3

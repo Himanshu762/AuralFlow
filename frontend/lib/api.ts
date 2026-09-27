@@ -233,15 +233,6 @@ export async function postLibraryEvent(trackId: string, event: "play" | "like" |
   await post("/library/event", { track_id: trackId, event });
 }
 
-export async function fetchLibraryStats(): Promise<LibraryStats | null> {
-  try {
-    const res = await fetch(`${API_BASE}/library/stats`);
-    if (!res.ok) return null;
-    return (await res.json()) as LibraryStats;
-  } catch {
-    return null;
-  }
-}
 
 /* ------------------------------------------------------------------ */
 /* The DJ                                                             */

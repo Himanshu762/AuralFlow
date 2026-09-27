@@ -13,7 +13,7 @@
 import { Player } from './player.js';
 import { LyricsManager } from './lyrics.js';
 import { downloadTrackWithMetadata, downloadTracks } from './download-service.js';
-import { runAutoEqAlgorithm } from './autoeq-engine.js';
+import { runAutoEqAlgorithm, calculateBiquadResponse } from './autoeq-engine.js';
 import { TARGETS } from './autoeq-data.js';
 import { fetchAutoEqIndex, fetchHeadphoneData, searchHeadphones, POPULAR_HEADPHONES } from './autoeq-importer.js';
 import { getPresetsForBandCount } from './equalizer.js';
@@ -219,6 +219,117 @@ function plistDict(node) {
         }
     }
     return out;
+}
+
+/**
+ * Re-delimit an export so the engine's CSV parser can read it.
+ *
+ * That parser splits on commas and nothing else. Tab-separated exports - which
+ * this app offers to read, since it accepts .tsv and .txt - and the semicolon
+ * CSVs Excel writes in most of Europe therefore collapse into a single column.
+ * Every row then yields an empty title and artist, every row is reported as
+ * not found, and nothing anywhere says why: the import looks like a catalogue
+ * with none of your music in it.
+ *
+ * So sniff the delimiter off the header and rewrite the file with commas.
+ */
+function normalizeDelimiter(text) {
+    const firstLine = text.split(/\r?\n/).find((line) => line.trim().length > 0);
+    if (!firstLine) return text;
+
+    /* Count each candidate outside quotes; the real delimiter is the one that
+       actually separates the header's fields. */
+    const score = (delimiter) => {
+        let count = 0;
+        let inQuote = false;
+        for (const char of firstLine) {
+            if (char === '"') inQuote = !inQuote;
+            else if (char === delimiter && !inQuote) count++;
+        }
+        return count;
+    };
+
+    /* Comma first, so a file that is already CSV is left exactly as it is. */
+    let best = ',';
+    for (const candidate of ['\t', ';', '|']) {
+        if (score(candidate) > score(best)) best = candidate;
+    }
+    if (best === ',' || score(best) === 0) return text;
+
+    const split = (line) => {
+        const values = [];
+        let current = '';
+        let inQuote = false;
+        for (let i = 0; i < line.length; i++) {
+            const char = line[i];
+            if (char === '"') {
+                if (inQuote && line[i + 1] === '"') { current += '"'; i++; }
+                else inQuote = !inQuote;
+            } else if (char === best && !inQuote) { values.push(current); current = ''; }
+            else current += char;
+        }
+        values.push(current);
+        return values;
+    };
+
+    return text
+        .split(/\r?\n/)
+        .map((line) => (line.trim() ? split(line).map((v) => csvCell(v.trim())).join(',') : ''))
+        .join('\n');
+}
+
+/**
+ * Run a CSV import in batches, so progress can be reported honestly.
+ *
+ * The engine's parser resolves the whole file in a single call and returns
+ * only at the very end. For a three-thousand-track library that is twenty
+ * minutes during which nothing can be known about how it is going - the shell
+ * can only show a match count of zero, which reads as a broken import rather
+ * than a slow one. The parser holds no state between calls, so feeding it the
+ * file a batch at a time yields the same result with a running count.
+ */
+async function parseCsvInBatches(csvText, catalogue, report, parse, size = 25) {
+    const lines = csvText.split('\n');
+    const header = lines[0];
+    const rows = lines.slice(1).filter((line) => line.trim().length > 0);
+
+    const tracks = [];
+    const albums = [];
+    const artists = [];
+    const missingItems = [];
+    const playlists = {};
+    let format = 'library';
+
+    for (let start = 0; start < rows.length; start += size) {
+        const batch = rows.slice(start, start + size);
+        const result = await parse([header, ...batch].join('\n'), catalogue, (p) =>
+            report({
+                current: start + (Number(p?.current) || 0),
+                total: rows.length,
+                currentItem: p?.currentItem,
+                matched: tracks.length,
+            })
+        );
+
+        format = result?.format ?? format;
+        for (const t of result?.tracks || []) tracks.push(t);
+        for (const a of result?.albums || []) albums.push(a);
+        for (const a of result?.artists || []) artists.push(a);
+        for (const m of result?.missingItems || []) missingItems.push(m);
+        for (const [name, items] of Object.entries(result?.playlists || {})) {
+            if (!playlists[name]) playlists[name] = [];
+            for (const item of items || []) playlists[name].push(item);
+        }
+
+        report({
+            current: Math.min(start + batch.length, rows.length),
+            total: rows.length,
+            currentItem: '',
+            matched: tracks.length,
+        });
+    }
+
+    return { format, tracks, albums, artists, missingItems, playlists };
 }
 
 function csvCell(value) {
@@ -1170,6 +1281,17 @@ function stopSpectrum() {
  * by switching it off.
  */
 
+/**
+ * Corrections computed by a given generation of the band mapping.
+ *
+ * A saved profile holds the finished gains, not the measurement, so a profile
+ * written by an older mapping keeps being reapplied for ever - the listener
+ * would have gone on hearing the bad curve however well this code was fixed.
+ * Bump this whenever the mapping changes and stale profiles are recomputed
+ * from the measurement instead of trusted.
+ */
+const CORRECTION_GENERATION = 2;
+
 const SIGNATURE_KEY = 'auralflow-signature';
 const DEVICE_PROFILES_KEY = 'auralflow-signature-devices';
 const LAYER_LIMIT_DB = 12;
@@ -1177,7 +1299,10 @@ const LAYER_LIMIT_DB = 12;
 const signature = {
     enabled: true,
     loudnessOn: true,
-    autoDevice: true,
+    /* Off until asked for. Matching a headphone by the name the operating
+       system gives an output is a guess, and a wrong correction sounds far
+       worse than none at all. */
+    autoDevice: false,
     /* The output device, as far as the webview can tell. */
     device: {
         id: '',
@@ -1201,7 +1326,13 @@ function loadSignaturePrefs() {
         if (raw && typeof raw === 'object') {
             if (typeof raw.enabled === 'boolean') signature.enabled = raw.enabled;
             if (typeof raw.loudnessOn === 'boolean') signature.loudnessOn = raw.loudnessOn;
-            if (typeof raw.autoDevice === 'boolean') signature.autoDevice = raw.autoDevice;
+            /* Automatic device matching used to default to on, and with the
+               old band mapping behind it that was a bad curve nobody asked
+               for. A preference carried over from then is not a choice, so
+               take it only once it has been written by this generation. */
+            if (raw.generation === CORRECTION_GENERATION && typeof raw.autoDevice === 'boolean') {
+                signature.autoDevice = raw.autoDevice;
+            }
         }
     } catch {
         /* nothing stored */
@@ -1216,6 +1347,7 @@ function saveSignaturePrefs() {
                 enabled: signature.enabled,
                 loudnessOn: signature.loudnessOn,
                 autoDevice: signature.autoDevice,
+                generation: CORRECTION_GENERATION,
             })
         );
     } catch {
@@ -1226,7 +1358,12 @@ function saveSignaturePrefs() {
 function loadDeviceProfiles() {
     try {
         const raw = JSON.parse(localStorage.getItem(DEVICE_PROFILES_KEY) || '{}');
-        return raw && typeof raw === 'object' ? raw : {};
+        if (!raw || typeof raw !== 'object') return {};
+        const current = {};
+        for (const [key, profile] of Object.entries(raw)) {
+            if (profile?.generation === CORRECTION_GENERATION) current[key] = profile;
+        }
+        return current;
     } catch {
         return {};
     }
@@ -1235,7 +1372,7 @@ function loadDeviceProfiles() {
 function saveDeviceProfile(key, profile) {
     if (!key) return;
     const profiles = loadDeviceProfiles();
-    if (profile) profiles[key] = profile;
+    if (profile) profiles[key] = { ...profile, generation: CORRECTION_GENERATION };
     else delete profiles[key];
     try {
         localStorage.setItem(DEVICE_PROFILES_KEY, JSON.stringify(profiles));
@@ -1281,11 +1418,37 @@ function loudnessCurve(volume, freqs) {
     });
 }
 
+/**
+ * The level the listener is actually hearing, 0-1.
+ *
+ * The engine keeps no `volume` on the player at all. Where Web Audio drives
+ * the output - everywhere except Safari - it pins the media element to unity
+ * and sends the real level to the gain node, so `element.volume` reads 1.0
+ * wherever the slider sits. Believing it means the loudness layer thinks the
+ * room is always at full tilt, and never engages.
+ *
+ * `getEffectiveVolume` is what the engine itself applies: the listener's level
+ * through the optional exponential curve, scaled by ReplayGain. That is the
+ * right signal for equal-loudness compensation, which follows output level
+ * rather than slider position.
+ */
 function currentVolume() {
+    try {
+        const effective = player?.getEffectiveVolume?.(player.currentRgValues);
+        if (Number.isFinite(effective)) return effective;
+    } catch { /* fall through to the cruder reads below */ }
+
+    /* Nearest truth first: the gain the graph is running, then the raw
+       slider, then the element - which is only meaningful on the native
+       volume path, where the graph is the one pinned to unity. */
+    const fromGraph = Number(audioContextManager?.currentVolume);
+    if (Number.isFinite(fromGraph)) return fromGraph;
+
+    const fromPlayer = Number(player?.userVolume);
+    if (Number.isFinite(fromPlayer)) return fromPlayer;
+
     const el = currentElement();
-    const fromElement = el && Number.isFinite(el.volume) ? el.volume : null;
-    const fromPlayer = Number.isFinite(player?.volume) ? player.volume : null;
-    return fromPlayer ?? fromElement ?? signature.lastVolume;
+    return el && Number.isFinite(el.volume) ? el.volume : signature.lastVolume;
 }
 
 /** Sum the layers and push them to the running filters. */
@@ -1321,24 +1484,55 @@ function composeSignature(ramp = 0.15) {
     audioContextManager.applyTransientGains(sum, ramp);
 }
 
-/** The band gains an AutoEQ correction produces, aligned to the EQ's bands. */
+/**
+ * The band gains an AutoEQ correction produces, aligned to the EQ's bands.
+ *
+ * AutoEQ describes a correction as peaking filters - a centre frequency, a
+ * gain and a Q - and those filters overlap. What a band of our equaliser has
+ * to carry is therefore the *combined response* of every filter at that band's
+ * centre, which is what `calculateBiquadResponse` computes.
+ *
+ * Dropping each filter's peak gain into the nearest band instead, which is
+ * what this did before, is wrong twice over. Filters that sit close together
+ * add up: AutoEq's HD 600 correction ends with three separate +3 dB filters at
+ * 6950 Hz, which became a single +9 dB band. And a filter's skirt, which is
+ * most of its effect, is discarded: a +14.8 dB lift at 20 Hz landed entirely
+ * on the 25 Hz band and contributed nothing at 40 or 63 Hz, where the same
+ * filter really gives +7.2 and +3.8.
+ *
+ * On that HD 600 correction the old mapping was off by -7.2 dB at 40 Hz and
+ * put a 4.9 dB notch at 4 kHz that the real filters do not have - a hole
+ * straight through the middle of every voice, under a wall of sub-bass.
+ */
 function bandsToGains(bands, freqs) {
     if (!Array.isArray(bands) || !Array.isArray(freqs)) return null;
+
+    /* Anything carrying a centre frequency is a filter and gets evaluated.
+       A missing Q means roughly one octave, which is the width AutoEQ falls
+       back to itself when it cannot find the skirt of a peak. */
+    const isFilters = bands.every((b) => b && Number.isFinite(Number(b.frequency ?? b.freq)));
+
+    if (isFilters) {
+        const sampleRate = Number(audioContextManager?.getAudioContext?.()?.sampleRate) || 48000;
+        /* `enabled` is not decoration: the engine's response function returns
+           a flat zero for a filter that does not carry it. */
+        const filters = bands.map((b) => ({
+            type: b.type || 'peaking',
+            freq: Number(b.frequency ?? b.freq),
+            gain: Number(b.gain) || 0,
+            q: Number(b.q ?? b.Q) || Math.SQRT2,
+            enabled: true,
+        }));
+        const gains = freqs.map((f) =>
+            filters.reduce((sum, filter) => sum + calculateBiquadResponse(f, filter, sampleRate), 0)
+        );
+        return gains.map((g) => Math.round(g * 100) / 100);
+    }
+
+    /* A plain list of per-band gains, already aligned. */
     const gains = new Array(freqs.length).fill(0);
-    const byFrequency = bands.every((b) => b && Number.isFinite(Number(b.frequency ?? b.freq)));
-    if (byFrequency) {
-        for (const b of bands) {
-            const f = Number(b.frequency ?? b.freq);
-            let best = 0;
-            for (let i = 1; i < freqs.length; i++) {
-                if (Math.abs(Math.log(freqs[i] / f)) < Math.abs(Math.log(freqs[best] / f))) best = i;
-            }
-            gains[best] += Number(b.gain) || 0;
-        }
-    } else {
-        for (let i = 0; i < Math.min(bands.length, freqs.length); i++) {
-            gains[i] = Number(bands[i]?.gain ?? bands[i]) || 0;
-        }
+    for (let i = 0; i < Math.min(bands.length, freqs.length); i++) {
+        gains[i] = Number(bands[i]?.gain ?? bands[i]) || 0;
     }
     return gains.map((g) => Math.round(g * 100) / 100);
 }
@@ -1353,7 +1547,18 @@ async function correctionFor(entry, targetId) {
     const bands = runAutoEqAlgorithm(measurement, target.data, freqs.length || 10);
     const gains = bandsToGains(bands, freqs);
     if (!gains) throw new Error('No correction could be computed for this pairing.');
-    return { gains, target };
+
+    /* AutoEQ publishes a correction alongside a negative preamp, because the
+       correction is mostly boost and would otherwise clip. We have no preamp
+       of our own to spend here - the listener's is theirs - so centre the
+       curve on its own mean instead. The shape, which is the whole point of
+       the correction, is untouched; what goes away is the several dB of
+       loudness that made every headphone profile sound like someone had
+       simply turned it up and leaned on the bass. */
+    const mean = gains.reduce((a, b) => a + b, 0) / (gains.length || 1);
+    const centred = gains.map((g) => Math.round((g - mean) * 100) / 100);
+
+    return { gains: centred, target, preamp: Math.round(-mean * 10) / 10 };
 }
 
 /** Apply a headphone correction to the device layer and remember it. */
@@ -1446,6 +1651,20 @@ async function onDeviceResolved() {
     emitSignature();
 
     if (!signature.autoDevice || !signature.device.label) return;
+
+    /* Only guess for something we are confident is headphones. A correction
+       measured in an ear cup makes no sense over speakers, and matching a
+       model name out of a sound-card label is a guess that sounds terrible
+       when it is wrong. Picking one by hand is always still available. */
+    if (signature.device.kind !== 'headphones') {
+        signature.device.message =
+            signature.device.kind === 'speakers'
+                ? `"${signature.device.label}" looks like speakers, so no headphone correction was applied. Pick one by hand if that is wrong.`
+                : `"${signature.device.label}" could not be identified as headphones, so nothing was applied automatically. Pick your model by hand to correct for it.`;
+        emitSignature();
+        return;
+    }
+
     try {
         const entry = await autoMatchDevice();
         if (entry) {
@@ -1661,7 +1880,10 @@ async function handleCommand(type, data) {
             const level = Number(data.level);
             if (Number.isFinite(level)) {
                 player.setVolume(Math.max(0, Math.min(1, level)));
-                signature.lastVolume = Math.max(0, Math.min(1, level));
+                /* Read back rather than trusting the commanded level: what
+                   reaches the output is scaled by ReplayGain and the volume
+                   curve, and the poll below compares against that. */
+                signature.lastVolume = currentVolume();
                 composeSignature(0.2);
                 emitSignature();
             }
@@ -1947,7 +2169,24 @@ async function handleCommand(type, data) {
 
         case 'queueremove': {
             try {
-                await player.removeFromQueue(Number(data.index));
+                /* The shell's index came from the last queue event it saw. If
+                   the engine has moved on since - a track ended, the DJ queued
+                   its pick - that index now points at a different track, and
+                   splicing it would drop the wrong one. Where the caller says
+                   which track it meant, the id is the truth and the index is
+                   only a hint. */
+                const queue = player.getCurrentQueue?.() ?? [];
+                const id = data.id == null ? null : String(data.id);
+                let index = Number(data.index);
+                if (id !== null && String(queue[index]?.id ?? '') !== id) {
+                    index = queue.findIndex((t) => t && String(t.id) === id);
+                }
+                if (!Number.isInteger(index) || index < 0 || index >= queue.length) {
+                    /* Already gone. Re-send the queue so the shell catches up. */
+                    send('queue', readQueue());
+                    break;
+                }
+                await player.removeFromQueue(index);
                 send('queue', readQueue());
             } catch (e) {
                 send('error', { scope: 'queueremove', message: String(e?.message ?? e) });
@@ -2273,18 +2512,54 @@ async function handleCommand(type, data) {
                 }
             }
 
+            /* The engine's CSV parser splits on commas only, so hand it
+               commas whatever the export actually used. */
+            if (parser === parsers.csv) source = normalizeDelimiter(source);
+
             const onProgress = (p) => {
                 send('importprogress', {
                     current: Number(p?.current) || 0,
                     total: Number(p?.total) || 0,
                     item: String(p?.currentItem ?? p?.item ?? ''),
+                    /* Absent for the formats that resolve in one pass; the
+                       shell leaves its count alone rather than showing zero. */
+                    matched: Number.isFinite(p?.matched) ? Number(p.matched) : null,
                 });
+            };
+
+            /* Every lookup the parser makes goes through here, so a
+               catalogue that is down is reported as a catalogue that is down.
+               Otherwise each failed request is swallowed row by row and the
+               import ends up claiming the catalogue has none of your music.
+               `searchTracksByIsrc` is deliberately absent, exactly as it is on
+               the engine's own API object: the parser probes for it, falls
+               back, and verifies ISRCs against the search results instead. */
+            let lookups = 0;
+            let failures = 0;
+            let lastLookupError = null;
+            const counted = (fn) => async (...args) => {
+                lookups++;
+                try {
+                    return await fn(...args);
+                } catch (e) {
+                    failures++;
+                    lastLookupError = e;
+                    throw e;
+                }
+            };
+            const catalogue = {
+                searchTracks: counted((...a) => api.searchTracks(...a)),
+                searchAlbums: counted((...a) => api.searchAlbums(...a)),
+                searchArtists: counted((...a) => api.searchArtists(...a)),
             };
 
             try {
                 /* The parsers hit the catalogue once per row and pace
                    themselves to stay under its rate limit. */
-                const result = await parser(source, api, onProgress);
+                const result =
+                    parser === parsers.csv
+                        ? await parseCsvInBatches(source, catalogue, onProgress, parsers.csv)
+                        : await parser(source, catalogue, onProgress);
                 /* These are full catalogue objects; keep them so playing the
                    imported list later needs no second lookup. */
                 for (const item of result.tracks || []) remember(libraryCache, item);
@@ -2308,6 +2583,34 @@ async function handleCommand(type, data) {
                         error:
                             'No tracks could be read from this file. It may be a format ' +
                             'this cannot parse, or the export may be incomplete.',
+                    });
+                    break;
+                }
+
+                /* Rows were read but none carried a title or an artist, which
+                   means the columns were not recognised - not that the
+                   catalogue is missing your music. Reporting these as "not
+                   found" is how a header mismatch masquerades as a library
+                   with nothing in it, so name the real problem. */
+                if (tracks.length === 0 && missing.every((m) => !m.title && !m.artist)) {
+                    const header = String(source.split(/\r?\n/)[0] ?? '').slice(0, 300);
+                    send('importdone', {
+                        error:
+                            `Read ${missing.length} rows, but no track or artist column was ` +
+                            `recognised, so there was nothing to look up. The first line reads: ` +
+                            `${header}`,
+                    });
+                    break;
+                }
+
+                /* Nothing matched and nothing the catalogue was asked for
+                   came back. That is an unreachable catalogue, not a library
+                   it has never heard of. */
+                if (tracks.length === 0 && lookups > 0 && failures === lookups) {
+                    send('importdone', {
+                        error:
+                            `The catalogue could not be reached, so none of the ${missing.length} ` +
+                            `tracks could be looked up. ${String(lastLookupError?.message ?? lastLookupError ?? '')}`.trim(),
                     });
                     break;
                 }
@@ -2483,9 +2786,21 @@ async function boot() {
 
         attachElementListeners();
         initSignature();
+
+        /* Say we are ready the moment we are.
+         *
+         * Whether a playback backend answers is a question for the network,
+         * and answering it takes up to fourteen seconds between the instance
+         * list and the health probe. Waiting for it here held `ready` back and
+         * left the whole app sitting on "Starting the audio engine" for that
+         * long on every single launch, with a player that had in fact been
+         * ready the whole time.
+         *
+         * So report readiness now, and let the probe follow with
+         * `playbackconfig` when it knows. */
         send('ready', {
             version: 3,
-            playbackConfigured: await playbackAvailable(),
+            playbackConfigured: null,
             preferAtmos: (() => {
                 try {
                     return preferDolbyAtmosSettings.isEnabled();
@@ -2494,6 +2809,26 @@ async function boot() {
                 }
             })(),
         });
+
+        /* The engine restores its own queue, current track, shuffle and repeat
+           from storage when it starts. Nothing was ever asking it for them, so
+           every launch looked like an empty queue and the shell then pushed
+           its own defaults back over the restored ones. Hand them over now,
+           before anything is mirrored the other way. */
+        send('queue', readQueue());
+        send('shuffle', { enabled: Boolean(player.shuffleActive) });
+        send('repeat', {
+            mode:
+                player.repeatMode === REPEAT_MODE.ALL
+                    ? 'all'
+                    : player.repeatMode === REPEAT_MODE.ONE
+                      ? 'one'
+                      : 'off',
+        });
+
+        void playbackAvailable()
+            .then((configured) => send('playbackconfig', { configured }))
+            .catch(() => send('playbackconfig', { configured: false }));
     } catch (e) {
         send('error', { scope: 'boot', message: String(e?.message ?? e) });
     }

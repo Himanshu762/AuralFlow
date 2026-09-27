@@ -9,7 +9,7 @@ src = src.replace("if (window.parent && window.parent !== window) {\n    void bo
 src += `
 globalThis.__t = { analyseFrame, estimateTempo, featuresSnapshot, resetMeasurement, loudnessCurve, bandsToGains,
   classifyDevice, composeSignature, matchTokens, signature, adaptiveBands, get measure() { return measure; }, set measure(v) { measure = v; },
-  setPlayer(p) { player = p; }, modeAndKey };
+  setPlayer(p) { player = p; }, modeAndKey, currentVolume, normalizeDelimiter };
 `;
 
 const sent = [];
@@ -51,9 +51,25 @@ const audioContextManager = {
   getAnalyser: () => analyser, getAudioContext: () => ctx, getGains: () => gains, isEQEnabled: true,
   toggleEQ() {}, applyTransientGains(g) { globalThis.__applied = g; },
 };
+/* An independent peaking-biquad magnitude response (RBJ cookbook), so the
+   band mapping is checked against the textbook rather than against the same
+   implementation it calls in the app. */
+function calculateBiquadResponse(freq, band, sampleRate = 48000) {
+  const A = Math.pow(10, (Number(band.gain) || 0) / 40);
+  const w0 = (2 * Math.PI * Number(band.freq)) / sampleRate;
+  const alpha = Math.sin(w0) / (2 * (Number(band.q) || Math.SQRT2));
+  const b = [1 + alpha * A, -2 * Math.cos(w0), 1 - alpha * A];
+  const a = [1 + alpha / A, -2 * Math.cos(w0), 1 - alpha / A];
+  const w = (2 * Math.PI * freq) / sampleRate;
+  const re = (c) => c[0] + c[1] * Math.cos(w) + c[2] * Math.cos(2 * w);
+  const im = (c) => -(c[1] * Math.sin(w) + c[2] * Math.sin(2 * w));
+  const mag = (c) => Math.hypot(re(c), im(c));
+  return 20 * Math.log10(mag(b) / mag(a));
+}
+
 const store = {};
 const sandbox = {
-  console, Math, Number, Array, Float32Array, Float64Array, Uint8Array, Date, JSON, Map, Set, Promise, setInterval: () => 0, clearInterval() {}, setTimeout, String, Boolean, Object, Error, DOMParser: class {},
+  console, Math, Number, Array, Float32Array, Float64Array, Uint8Array, Date, JSON, Map, Set, Promise, setInterval: () => 0, clearInterval() {}, setTimeout, String, Boolean, Object, Error, DOMParser: class {}, calculateBiquadResponse,
   window: { parent: { postMessage(m) { sent.push(m); } }, addEventListener() {} },
   navigator: { mediaDevices: null, platform: "Linux" },
   localStorage: { getItem: (k) => store[k] ?? null, setItem: (k, v) => { store[k] = v; } },
@@ -91,11 +107,59 @@ ok(sent.filter((m) => m.type === "af:spectrum").length === HZ * 10, `spectrum at
 const lc = T.loudnessCurve(0.2, audioContextManager.frequencies);
 ok(lc && lc[0] > 2 && lc[8] === 0 && lc[15] > 0, `loudness curve at 20% volume ${JSON.stringify(lc)}`);
 ok(T.loudnessCurve(1, audioContextManager.frequencies) === null, "no loudness compensation at full volume");
+
+/* The level the loudness layer reads. Shaped like the real engine on the Web
+   Audio path: the element is pinned to unity and the true level lives on the
+   player, so a reader that trusts the element sees 1.0 and compensates never. */
+const savedPlayer = T.setPlayer;
+T.setPlayer({
+  activeElement: { volume: 1 },
+  userVolume: 0.2,
+  currentRgValues: null,
+  getEffectiveVolume(rg) { return this.userVolume; },
+});
+ok(T.currentVolume() === 0.2, `volume read past the element pinned at unity (${T.currentVolume()})`);
+T.setPlayer({ activeElement: { volume: 1 }, userVolume: 0.35, currentRgValues: null });
+ok(T.currentVolume() === 0.35, `volume falls back to the player's own level (${T.currentVolume()})`);
+audioContextManager.currentVolume = 0.5;
+T.setPlayer({ activeElement: { volume: 1 }, currentRgValues: null });
+ok(T.currentVolume() === 0.5, `volume falls back to the running gain node (${T.currentVolume()})`);
+delete audioContextManager.currentVolume;
+T.setPlayer({ activeElement: { volume: 0.6 }, currentRgValues: null });
+ok(T.currentVolume() === 0.6, `volume falls back to the element on the native path (${T.currentVolume()})`);
+T.setPlayer(null);
+
+/* Exports that are not comma-separated. The engine's CSV parser splits on
+   commas only, so anything else collapses to one column and every row looks
+   like a track the catalogue does not have. */
+const commaCsv = '"Track Name","Artist Name","Album"\n"Karma Police","Radiohead","OK Computer"';
+for (const [name, d] of [["tab", "\t"], ["semicolon", ";"], ["pipe", "|"]]) {
+  const raw = `Track Name${d}Artist Name${d}Album\nKarma Police${d}Radiohead${d}OK Computer`;
+  ok(T.normalizeDelimiter(raw) === commaCsv, `${name}-separated export is rewritten as CSV`);
+}
+ok(T.normalizeDelimiter(commaCsv) === commaCsv, "a comma CSV is left untouched");
+ok(
+  T.normalizeDelimiter('"Lastname, Firstname","Artist"') === '"Lastname, Firstname","Artist"',
+  "a comma inside quotes does not look like a delimiter"
+);
 ok(T.classifyDevice("Sony WH-1000XM4 Hands-Free AG Audio") === "headphones", "classifies headphones");
 ok(T.classifyDevice("HDMI / DisplayPort 2 Output") === "speakers", "classifies speakers");
 ok(JSON.stringify(T.matchTokens("Sony WH-1000XM4 Hands-Free AG Audio")) === JSON.stringify(["sony", "wh-1000xm4"]), "match tokens " + JSON.stringify(T.matchTokens("Sony WH-1000XM4 Hands-Free AG Audio")));
-const g = T.bandsToGains([{ frequency: 100, gain: 3 }, { frequency: 10000, gain: -2 }], audioContextManager.frequencies);
-ok(g[3] === 3 && g[13] === -2, "bands map to nearest EQ band " + JSON.stringify(g));
+/* AutoEQ hands over overlapping peaking filters, so a band carries the summed
+   response of all of them at its centre - not the peak gain of whichever
+   filter happens to be nearest. */
+const g = T.bandsToGains(
+  [{ frequency: 100, gain: 3, q: 1.4 }, { frequency: 10000, gain: -2, q: 1.4 }],
+  audioContextManager.frequencies
+);
+ok(Math.abs(g[3] - 3) < 0.2 && Math.abs(g[13] + 2) < 0.2, "a filter peaks on its own band " + JSON.stringify(g));
+ok(g[2] > 0.3 && g[4] > 0.3, "a filter's skirt reaches its neighbours " + JSON.stringify([g[2], g[4]]));
+/* Three co-located +3 dB filters are +9 dB of boost, not one +3 dB band. */
+const stacked = T.bandsToGains(
+  [{ frequency: 6300, gain: 3, q: 1.4 }, { frequency: 6300, gain: 3, q: 1.4 }, { frequency: 6300, gain: 3, q: 1.4 }],
+  audioContextManager.frequencies
+);
+ok(Math.abs(stacked[12] - 9) < 0.3, "co-located filters sum their response " + stacked[12]);
 gains[0] = 2;
 T.signature.track = new Array(16).fill(1);
 T.signature.device.correction = new Array(16).fill(0.5);

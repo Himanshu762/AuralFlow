@@ -73,8 +73,25 @@ export default function ImportPanel({ onImport, compact }: Props) {
     [accept]
   );
 
-  const { running, done, error, matched, missing, current, total, item } = importState;
+  const { running, done, error, matched, matchedCount, missing, current, total, item } = importState;
   const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+
+  /* How long is left, measured from the pace this run is actually going at
+     rather than guessed. A library of a few thousand tracks is looked up one
+     at a time against a rate limit, so it takes tens of minutes — long enough
+     that not saying so looks like the import has hung. */
+  const startedAt = useRef<number | null>(null);
+  if (running && startedAt.current === null) startedAt.current = Date.now();
+  if (!running) startedAt.current = null;
+
+  const remaining = (() => {
+    if (!running || current < 5 || total <= current || startedAt.current === null) return null;
+    const perRow = (Date.now() - startedAt.current) / current;
+    const left = Math.round((perRow * (total - current)) / 1000);
+    if (left < 60) return "under a minute left";
+    const mins = Math.round(left / 60);
+    return mins < 60 ? `about ${mins} min left` : `about ${Math.round(mins / 60)} hr left`;
+  })();
 
   /* ---------------- Running ---------------- */
 
@@ -101,14 +118,16 @@ export default function ImportPanel({ onImport, compact }: Props) {
         <div className="flex items-center justify-between text-[11px] text-outline">
           <span>
             {current} of {total || "?"}
+            {remaining ? ` · ${remaining}` : ""}
           </span>
-          <span>{matched.length} matched</span>
+          <span>{matchedCount} matched</span>
         </div>
 
         <p className="text-[11px] text-outline mt-4 leading-relaxed">
           Each track is looked up individually and paced to stay under the
-          catalogue&apos;s rate limit, so a long playlist takes a few minutes. You can
-          keep listening while it runs.
+          catalogue&apos;s rate limit, so a library of a few thousand tracks takes
+          tens of minutes. You can keep listening while it runs, and closing this
+          panel does not stop it.
         </p>
       </div>
     );
